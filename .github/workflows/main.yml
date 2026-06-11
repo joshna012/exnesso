@@ -25,7 +25,7 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Downloading Exness MT5 Installer..."
-          curl -L -o exness5setup.exe https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe
+          curl.exe -L -o exness5setup.exe https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe
 
       - name: Install MetaTrader 5 Silently
         shell: powershell
