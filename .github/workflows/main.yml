@@ -1,0 +1,71 @@
+name: Run MT5 Trading Bot
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  run-bot:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install MetaTrader5 numpy
+
+      - name: Download MetaTrader 5 Installer
+        shell: powershell
+        run: |
+          Write-Host "Downloading Exness MT5 Installer..."
+          curl -L -o exness5setup.exe https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe
+
+      - name: Install MetaTrader 5 Silently
+        shell: powershell
+        run: |
+          Write-Host "Installing Exness MT5 (unattended)..."
+          Start-Process -FilePath ".\exness5setup.exe" -ArgumentList "/auto" -Wait
+          Write-Host "Installation completed."
+
+      - name: Verify MT5 Executable Presence
+        shell: powershell
+        run: |
+          $paths = @(
+              "C:\Program Files\Exness MetaTrader 5\terminal64.exe",
+              "C:\Program Files\MetaTrader 5\terminal64.exe"
+          )
+          $found = $false
+          foreach ($path in $paths) {
+              if (Test-Path $path) {
+                  Write-Host "Success: Found MT5 executable at $path"
+                  $found = $true
+                  break
+              }
+          }
+          if (-not $found) {
+              Write-Warning "Warning: MT5 executable not found at fallback paths."
+              Get-ChildItem -Path "C:\Program Files" -Filter "*MetaTrader*" -Recurse -ErrorAction SilentlyContinue
+          }
+
+      - name: Run Trading Bot
+        shell: powershell
+        run: |
+          Write-Host "Launching MT5 trading bot..."
+          python mt5bot.py
+        env:
+          PYTHONUNBUFFERED: "1"
+
+      - name: Upload Trade Journal Artifact
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: mt5-trade-journal
+          path: trade_journal.csv
