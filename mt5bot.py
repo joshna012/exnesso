@@ -31,9 +31,30 @@ import numpy as np
 import MetaTrader5 as mt5
 
 # ---------------- CONFIG ----------------
-SERVER   = "Exness-MT5Trial14"
-LOGIN    = 415849340
-PASSWORD = "Shawon63@@"
+SERVER   = os.environ.get("MT5_SERVER")
+LOGIN    = os.environ.get("MT5_LOGIN")
+PASSWORD = os.environ.get("MT5_PASSWORD")
+
+# Fallback to local_config.py for local development
+if not SERVER or not LOGIN or not PASSWORD:
+    try:
+        import local_config
+        SERVER   = SERVER or getattr(local_config, "MT5_SERVER", None)
+        LOGIN    = LOGIN or getattr(local_config, "MT5_LOGIN", None)
+        PASSWORD = PASSWORD or getattr(local_config, "MT5_PASSWORD", None)
+    except ImportError:
+        pass
+
+# Verify credentials are set
+if not SERVER or not LOGIN or not PASSWORD:
+    raise RuntimeError(
+        "Error: MT5 credentials not found. "
+        "Please set MT5_LOGIN, MT5_PASSWORD, and MT5_SERVER as environment variables, "
+        "or create a local_config.py file with your private credentials. "
+        "Ensure local_config.py is added to .gitignore to keep it private."
+    )
+
+LOGIN = int(LOGIN)
 
 SYMBOLS           = ["XAUUSDm"]  # Hunted in parallel (Gold only)
 SCAN_SECONDS      = 0.1            # scan 10 times per second (lightning-fast execution)
@@ -94,7 +115,7 @@ MAX_TRADES_DAY    = 100
 COOLDOWN_SEC      = 60           # normal cooldown per symbol in seconds
 LOSS_STREAK_MAX   = 3            # losses in a row -> pause
 LOSS_PAUSE_SEC    = 900          # 15-minute chop pause
-SESSION_START_UTC = 7            # London open  (13:00 your local time)
+SESSION_START_UTC = 0            # Tokyo open   (06:00 your local time)
 SESSION_END_UTC   = 17           # NY afternoon (23:00 your local time)
 MAX_OPEN_TOTAL    = 2            # max simultaneous positions
 MAGIC             = 234568
@@ -504,13 +525,23 @@ def find_active_order_blocks(rates, atr):
     return bullish_obs, bearish_obs
 
 def get_orb_ranges(symbol):
-    """Fetch and calculate London (07:00 UTC) and NY (13:00 UTC) ORB range high/low for today."""
+    """Fetch and calculate Tokyo (00:00 UTC), London (07:00 UTC) and NY (13:00 UTC) ORB range high/low for today."""
     today = datetime.now(timezone.utc).date()
     if symbol not in state["orb_ranges"]:
         state["orb_ranges"][symbol] = {}
         
     symbol_ranges = state["orb_ranges"][symbol]
     now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    
+    # Tokyo ORB (00:00 - 00:15 UTC)
+    if "tokyo_high" not in symbol_ranges:
+        start_dt = datetime(today.year, today.month, today.day, 0, 0)
+        if now_naive >= start_dt + timedelta(minutes=ORB_PERIOD):
+            tokyo_rates = mt5.copy_rates_from(symbol, mt5.TIMEFRAME_M1, start_dt, ORB_PERIOD)
+            if tokyo_rates is not None and len(tokyo_rates) >= ORB_PERIOD:
+                symbol_ranges["tokyo_high"] = np.max(tokyo_rates['high'])
+                symbol_ranges["tokyo_low"] = np.min(tokyo_rates['low'])
+                log.info("Symbol %s Tokyo ORB Range established: %.5f - %.5f", symbol, symbol_ranges["tokyo_low"], symbol_ranges["tokyo_high"])
     
     # London ORB (07:00 - 07:15 UTC)
     if "london_high" not in symbol_ranges:
@@ -678,12 +709,13 @@ def daily_guard():
     floating_pnl = (acc.equity - state["start_balance"]) / state["start_balance"]
     realized_pnl = (acc.balance - state["start_balance"]) / state["start_balance"]
 
-    if floating_pnl <= -DAILY_LOSS_LIMIT:
-        close_all_positions("loss_limit")
-        state.update(halted=True, halt_reason="loss limit")
-        log.warning("DAILY LOSS LIMIT (-%.0f%%). Halted.", DAILY_LOSS_LIMIT * 100)
-        notify(f"🛑 Daily loss limit hit ({floating_pnl*100:.1f}%). All trades closed. Trading halted.")
-        return False
+    # Drawdown limit checks floating equity (DISABLED - Solution 3)
+    # if floating_pnl <= -DAILY_LOSS_LIMIT:
+    #     close_all_positions("loss_limit")
+    #     state.update(halted=True, halt_reason="loss limit")
+    #     log.warning("DAILY LOSS LIMIT (-%.0f%%). Halted.", DAILY_LOSS_LIMIT * 100)
+    #     notify(f"🛑 Daily loss limit hit ({floating_pnl*100:.1f}%). All trades closed. Trading halted.")
+    #     return False
 
     # Dynamic Trailing Daily Profit Floor Activation
     max_pnl = max(realized_pnl, floating_pnl)
@@ -1057,7 +1089,7 @@ def run():
                 if STRATEGY_MODE == "AUTO":
                     if adx >= 25:
                         hour = datetime.now(timezone.utc).hour
-                        if (SESSION_START_UTC <= hour < SESSION_START_UTC + 2) or (13 <= hour < 15):
+                        if (0 <= hour < 2) or (7 <= hour < 9) or (13 <= hour < 15):
                             active_mode = "ORB"
                         else:
                             active_mode = "BREAKOUT"
@@ -1124,7 +1156,12 @@ def run():
                     elif active_mode == "ORB":
                         orb_range = get_orb_ranges(symbol)
                         hour = datetime.now(timezone.utc).hour
-                        active_session = "ny" if hour >= 13 else "london"
+                        if hour >= 13:
+                            active_session = "ny"
+                        elif hour >= 7:
+                            active_session = "london"
+                        else:
+                            active_session = "tokyo"
                         high_key = f"{active_session}_high"
                         low_key = f"{active_session}_low"
                         if high_key in orb_range:
@@ -1284,8 +1321,7 @@ def run():
                     if adx >= 25:
                         # Trending regime
                         hour = datetime.now(timezone.utc).hour
-                        # If first 2 hours of London (07:00-09:00 UTC) or NY (13:00-15:00 UTC)
-                        if (SESSION_START_UTC <= hour < SESSION_START_UTC + 2) or (13 <= hour < 15):
+                        if (0 <= hour < 2) or (7 <= hour < 9) or (13 <= hour < 15):
                             active_mode = "ORB"
                         else:
                             active_mode = "BREAKOUT"
@@ -1419,7 +1455,12 @@ def run():
                     sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15)
                     
                     hour = datetime.now(timezone.utc).hour
-                    active_session = "ny" if hour >= 13 else "london"
+                    if hour >= 13:
+                        active_session = "ny"
+                    elif hour >= 7:
+                        active_session = "london"
+                    else:
+                        active_session = "tokyo"
                     
                     high_key = f"{active_session}_high"
                     low_key = f"{active_session}_low"
@@ -1515,6 +1556,7 @@ def run():
             if n % 30 == 0:  # status every ~30s
                 acc = mt5.account_info()
                 hour = datetime.now(timezone.utc).hour
+                equity = acc.equity if acc is not None else 0.0
                 if state["halted"]:
                     status = f"halted ({state['halt_reason']})"
                 elif not (SESSION_START_UTC <= hour < SESSION_END_UTC):
@@ -1524,7 +1566,7 @@ def run():
                 else:
                     status = "hunting"
                 log.info("Status: %s | equity=%.2f | trades today=%d | open=%d",
-                         status, acc.equity, state["trades_today"], open_count)
+                         status, equity, state["trades_today"], open_count)
             # Run duration limit check for Github Actions
             if RUN_DURATION_HOURS > 0 and (time.time() - BOT_START) > RUN_DURATION_HOURS * 3600:
                 log.info("⏳ Run duration limit reached (%s hours). Initiating clean shutdown...", RUN_DURATION_HOURS)
