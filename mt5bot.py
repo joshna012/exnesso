@@ -599,6 +599,7 @@ def journal_closed_deals():
 def connect():
     if not mt5.initialize(login=LOGIN, server=SERVER, password=PASSWORD):
         fallback_paths = [
+            "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe",
             "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
             "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
         ]
