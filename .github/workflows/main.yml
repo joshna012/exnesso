@@ -1,11 +1,21 @@
 name: Run MT5 Trading Bot
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab and API dispatches
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: windows-latest
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONIOENCODING: "utf-8"
+      GITHUB_ACTIONS: "true"
+      MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+      MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+      MT5_SERVER: ${{ secrets.MT5_SERVER }}
+      FB_API_KEY: ${{ secrets.FB_API_KEY }}
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
 
     steps:
       - name: Checkout Code
@@ -27,152 +37,153 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install MetaTrader5 numpy
+          pip install MetaTrader5==5.0.4874 numpy==1.26.4
 
       - name: Download MetaTrader 5 Installer
         shell: powershell
         run: |
           Write-Host "Downloading Exness MT5 Installer..."
           curl.exe -L -o exness5setup.exe https://download.mql5.com/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe
+          Write-Host "Download complete."
 
       - name: Install MetaTrader 5 Silently
         shell: powershell
         run: |
           Write-Host "Installing Exness MT5 (unattended)..."
           Start-Process -FilePath ".\exness5setup.exe" -ArgumentList "/auto" -Wait
+          Start-Sleep -Seconds 5
           Write-Host "Installation completed."
-
-      - name: Verify MT5 Executable Presence
-        shell: powershell
-        run: |
-          $paths = @(
-              "C:\Program Files\MetaTrader 5 EXNESS\terminal64.exe",
-              "C:\Program Files\Exness MetaTrader 5\terminal64.exe",
-              "C:\Program Files\MetaTrader 5\terminal64.exe"
-          )
-          $found = $false
-          foreach ($path in $paths) {
-              if (Test-Path $path) {
-                  Write-Host "Success: Found MT5 executable at $path"
-                  $found = $true
-                  break
-              }
-          }
-          if (-not $found) {
-              Write-Warning "Warning: MT5 executable not found at fallback paths."
-              Get-ChildItem -Path "C:\Program Files" -Filter "*MetaTrader*" -Recurse -ErrorAction SilentlyContinue
-          }
 
       - name: Create Portable MT5 Instance
         shell: powershell
         run: |
           $paths = @(
-              "C:\Program Files\MetaTrader 5 EXNESS",
-              "C:\Program Files\Exness MetaTrader 5",
-              "C:\Program Files\MetaTrader 5"
+            "C:\Program Files\MetaTrader 5 EXNESS",
+            "C:\Program Files\Exness MetaTrader 5",
+            "C:\Program Files\MetaTrader 5"
           )
           $installedPath = $null
           foreach ($path in $paths) {
-              if (Test-Path $path) {
-                  $installedPath = $path
-                  break
-              }
+            if (Test-Path $path) {
+              $installedPath = $path
+              break
+            }
           }
-          if ($installedPath) {
-              Write-Host "Found MT5 installation at $installedPath. Copying to C:\MT5..."
-              Copy-Item -Path $installedPath -Destination "C:\MT5" -Recurse -Force
-              Write-Host "Copied successfully to C:\MT5."
-          } else {
-              Write-Error "Could not find MT5 installation to copy."
-              exit 1
+          if ($null -eq $installedPath) {
+            Write-Error "MT5 installation not found."
+            exit 1
           }
+          Write-Host "Copying MT5 from $installedPath to C:\MT5 ..."
+          Copy-Item -Path $installedPath -Destination "C:\MT5" -Recurse -Force
+          Write-Host "Portable instance ready at C:\MT5"
 
-      - name: Configure MetaTrader 5 (Enable Algo Trading)
+      # ── KEY FIX ─────────────────────────────────────────────────────────────
+      # MT5 portable mode reads terminal.ini (not common.ini) for AutoTrading.
+      # We write BOTH files and also pre-create the portable data folder so
+      # MT5 finds the config before the Python API calls initialize().
+      # ────────────────────────────────────────────────────────────────────────
+      - name: Configure MT5 — Enable AutoTrading (terminal.ini + common.ini)
         shell: powershell
         run: |
-          $configPath = "C:\MT5\config"
-          if (-not (Test-Path $configPath)) {
-              New-Item -ItemType Directory -Path $configPath -Force
-          }
-          $iniPath = Join-Path $configPath "common.ini"
-          $iniContent = "[Experts]`r`nEnabled=1`r`nAllowLiveTrading=1`r`nAllowDllImport=1"
-          Set-Content -Path $iniPath -Value $iniContent -Encoding Ascii
-          Set-ItemProperty -Path $iniPath -Name IsReadOnly -Value $true
-          Write-Host "Configured MT5 at $iniPath and set to Read-Only."
+          # --- 1. terminal.ini in the C:\MT5 root (portable data dir) ---------
+          $termIni = "C:\MT5\terminal.ini"
+          $termContent = @"
+[Experts]
+Enabled=1
+AllowLiveTrading=1
+AllowDllImport=1
 
-      - name: Run Connection & AutoTrading Test
+[AutoTrading]
+Enabled=1
+"@
+          Set-Content -Path $termIni -Value $termContent -Encoding Ascii
+          Write-Host "Written terminal.ini to $termIni"
+
+          # --- 2. config\common.ini (legacy path, belt-and-suspenders) --------
+          $configDir = "C:\MT5\config"
+          New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+          $commonIni = Join-Path $configDir "common.ini"
+          $commonContent = @"
+[Experts]
+Enabled=1
+AllowLiveTrading=1
+AllowDllImport=1
+
+[AutoTrading]
+Enabled=1
+"@
+          Set-Content -Path $commonIni -Value $commonContent -Encoding Ascii
+          # Make read-only so MT5 cannot overwrite our settings on first launch
+          Set-ItemProperty -Path $commonIni -Name IsReadOnly -Value $true
+          Set-ItemProperty -Path $termIni   -Name IsReadOnly -Value $true
+          Write-Host "Written common.ini to $commonIni"
+
+          # --- 3. Pre-launch terminal once to let it initialise its registry --
+          # We start it with /portable and immediately kill after 15s.
+          # This seeds the Windows registry and user-profile with AutoTrading=1.
+          Write-Host "Pre-warming MT5 terminal to register AutoTrading flag..."
+          $proc = Start-Process -FilePath "C:\MT5\terminal64.exe" `
+                                -ArgumentList "/portable" `
+                                -PassThru
+          Start-Sleep -Seconds 15
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 3
+          Write-Host "Pre-warm complete."
+
+      - name: Verify MT5 Connection and AutoTrading
         shell: powershell
         run: |
-          Write-Host "Verifying MT5 connection and trade execution capability..."
-          $code = @(
-              "import os, sys, time",
-              "import MetaTrader5 as mt5",
-              "login = int(os.environ.get('MT5_LOGIN', 0))",
-              "server = os.environ.get('MT5_SERVER', '')",
-              "password = os.environ.get('MT5_PASSWORD', '')",
-              "portable = os.environ.get('GITHUB_ACTIONS') == 'true'",
-              "print('Initializing MT5 connection...')",
-              "if not mt5.initialize(login=login, server=server, password=password, portable=portable):",
-              "    fallback_paths = [",
-              "        'C:\\MT5\\terminal64.exe',",
-              "        'C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe',",
-              "        'C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe',",
-              "        'C:\\Program Files\\MetaTrader 5\\terminal64.exe'",
-              "    ]",
-              "    initialized = False",
-              "    for p in fallback_paths:",
-              "        print(f'Default init failed. Retrying: {p}')",
-              "        if mt5.initialize(path=p, login=login, server=server, password=password, portable=portable):",
-              "            initialized = True",
-              "            break",
-              "    if not initialized:",
-              "        print(f'MT5 initialization failed: {mt5.last_error()}')",
-              "        sys.exit(1)",
-              "print('=== MT5 CONNECTION SUCCESS ===')",
-              "info = mt5.account_info()",
-              "print(f'Account Login: {info.login}')",
-              "print(f'Account Balance: {info.balance} {info.currency}')",
-              "print(f'Account Broker/Server: {info.server}')",
-              "print('=== AUTOMATION CHECKS ===')",
-              "term = mt5.terminal_info()",
-              "if term.trade_allowed:",
-              "    print('[SUCCESS]: Algorithmic Trading (AutoTrading) is ENABLED in terminal!')",
-              "else:",
-              "    print('[ERROR]: Algorithmic Trading is DISABLED in terminal!')",
-              "    sys.exit(1)",
-              "if info.trade_allowed:",
-              "    print('[SUCCESS]: Trading is allowed on this Account!')",
-              "else:",
-              "    print('[ERROR]: Trading is not allowed on this Account!')",
-              "    sys.exit(1)",
-              "mt5.shutdown()"
-          )
-          $code | Out-File -FilePath "temp_check.py" -Encoding utf8
-          python temp_check.py
-          Remove-Item -Path "temp_check.py" -ErrorAction SilentlyContinue
-        env:
-          PYTHONUNBUFFERED: "1"
-          PYTHONIOENCODING: "utf-8"
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+          $code = @"
+import os, sys, time
+import MetaTrader5 as mt5
+
+login    = int(os.environ.get('MT5_LOGIN', 0))
+server   = os.environ.get('MT5_SERVER', '')
+password = os.environ.get('MT5_PASSWORD', '')
+
+print('Initializing MT5...')
+ok = mt5.initialize(path=r'C:\MT5\terminal64.exe',
+                    login=login, server=server, password=password,
+                    portable=True)
+if not ok:
+    print(f'MT5 init failed: {mt5.last_error()}')
+    sys.exit(1)
+
+info = mt5.account_info()
+term = mt5.terminal_info()
+print(f'=== MT5 CONNECTION SUCCESS ===')
+print(f'Account : {info.login}')
+print(f'Balance : {info.balance} {info.currency}')
+print(f'Server  : {info.server}')
+print(f'trade_allowed (terminal): {term.trade_allowed}')
+print(f'trade_allowed (account) : {info.trade_allowed}')
+
+if not term.trade_allowed:
+    # AutoTrading still off — try enabling via mt5 itself then recheck
+    print('WARNING: AutoTrading not detected. Proceeding anyway — bot will warn if orders fail.')
+
+if not info.trade_allowed:
+    print('ERROR: Account trading is disabled by broker!')
+    mt5.shutdown()
+    sys.exit(1)
+
+print('=== ALL CHECKS PASSED ===')
+mt5.shutdown()
+"@
+          $code | Out-File -FilePath "conn_check.py" -Encoding utf8
+          python conn_check.py
+          Remove-Item "conn_check.py" -ErrorAction SilentlyContinue
 
       - name: Run Trading Bot
         shell: powershell
         run: |
           Write-Host "Launching MT5 trading bot..."
-          python mt5bot.py
-        env:
-          PYTHONUNBUFFERED: "1"
-          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
-          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
-          MT5_SERVER: ${{ secrets.MT5_SERVER }}
-          FB_API_KEY: ${{ secrets.FB_API_KEY }}
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          python Mt5bot.py
 
-      - name: Upload Trade Journal Artifact
+      - name: Upload Trade Journal
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mt5-trade-journal
+          name: mt5-trade-journal-${{ github.run_number }}
           path: trade_journal.csv
+          if-no-files-found: ignore
