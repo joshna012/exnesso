@@ -78,12 +78,40 @@ ADX_MIN_LEVEL      = 20           # minimum trend strength (ADX >= 20 to trade)
 RSI_PERIOD         = 14           # Relative Strength Index period for sweep confirmation
 SPREAD_ATR_LIMIT   = 0.35         # max ratio of spread / ATR to allow trading
 SPREAD_MA_PERIOD   = 20           # lookback for average spread to detect widening
-SL_ATR_MULT        = 1.0          # stop-loss = 1.0x ATR (tighter for pullback bounces)
+SL_ATR_MULT        = 1.0          # stop-loss = 1.0x ATR fallback (structural SL preferred)
 TP_ATR_MULT        = 3.0          # initial take-profit = 3.0x ATR (R:R ratio of 1:3)
-QTP_THRESHOLD      = 75           # minimum Quantitative Trade Probability Score (0-100) to trade
+QTP_THRESHOLD      = 70           # minimum Quantitative Trade Probability Score (0-100) to trade
 DXY_VELOCITY_LIMIT = 0.05         # block trades if DXY shifts by more than this over 3 candles
 SWING_LOOKBACK     = 10           # lookback for swing high/low trailing stop
 OB_LOOKBACK        = 15           # candles to scan back for active Order Blocks
+
+# ---- Smart RR / Structural SL-TP Settings ----
+MIN_RR_RATIO        = 4.0          # hard minimum reward:risk ratio — skip trade if RR < 4.0 (institutional standard)
+STRUCTURAL_SL       = True         # use nearest M1 swing high/low for SL instead of fixed ATR
+STRUCTURAL_TP       = True         # use H1 swing target for TP to anchor to real price structure
+STRUCT_SL_LOOKBACK  = 8            # candles to look back for structural swing SL point
+STRUCT_TP_LOOKBACK  = 30           # H1 candles to look back for next swing high/low TP target (30h window)
+SL_BUFFER_ATR       = 0.15         # buffer beyond swing point for SL (0.15x ATR cushion)
+TP_BUFFER_ATR       = 0.20         # buffer before swing point for TP (take profit slightly before resistance)
+MAX_SL_ATR_MULT     = 2.0          # cap structural SL at 2.0x ATR max (wider to allow more setups)
+
+# ---- Institutional Liquidity Settings ----
+EQH_EQL_LOOKBACK    = 30           # candles to scan for Equal Highs / Equal Lows pools
+EQH_EQL_TOLERANCE   = 0.20         # ATR fraction: two highs/lows this close = equal (Gold-optimized)
+EQH_EQL_MIN_GAP     = 3            # minimum candles between the two equal points
+PREMIUM_DISC_PERIOD = 50           # candles to define the swing range for Premium/Discount zones
+IDM_LOOKBACK        = 10           # candles to check for Inducement (fake breakout) trap
+IDM_WICK_RATIO      = 0.55         # wick must be >= 55% of candle range to qualify as IDM rejection
+LIQ_SCORE_ENABLED   = True         # include liquidity confluence in QTP scoring
+
+# ---- Smart Entry Quality Filters ----
+MOMENTUM_FILTER_ENABLED = True    # require momentum confirmation before entry
+MOMENTUM_BARS           = 3       # last N M1 candles must agree on direction
+TREND_VALID_CHECK       = True    # re-check trend still intact before each entry
+SMART_TIME_EXIT         = True    # don't time-exit if trade is profitable — let it run
+SMART_TIME_EXIT_BUFFER  = 0.3     # only time-exit if profit < 0.3x ATR (near breakeven or loss)
+LOSS_COOLDOWN_SCALE     = 2       # after loss: cooldown = COOLDOWN_SEC × this (was 3x, now 2x)
+CHOP_ADX_LEVEL          = 18      # if ADX drops below this after entry, it's choppy — tighten SL
  
 # Economic News Calendar Settings
 NEWS_URL           = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
@@ -96,9 +124,9 @@ SWEEP_WICK_RATIO    = 0.40         # setup candle rejection wick must be >= 40% 
 ORB_PERIOD          = 15           # opening range duration in minutes (used in ORB mode)
 SMC_LOOKBACK        = 10           # candles to scan back for active Fair Value Gaps (used in SMC mode)
 MIN_CANDLE_RANGE_ATR = 0.30       # setup M1 candle must be at least 30% of M1 ATR
-MIN_BODY_RATIO       = 0.50       # candle body must be >= 50% of the full candle range
+MIN_BODY_RATIO       = 0.40       # candle body must be >= 40% of the full candle range
 RVOL_PERIOD         = 20           # period for M1 average tick volume calculation
-RVOL_LIMIT          = 1.5          # setup candle volume must be >= 1.5x average volume
+RVOL_LIMIT          = 1.2          # setup candle volume must be >= 1.2x average volume (Gold-optimized)
 
 # Scale-Out / Partial TP Settings
 PARTIAL_TP_ATR      = 1.5          # target to take partial profit
@@ -109,7 +137,7 @@ TRAIL_TRIGGER_ATR  = 1.0          # trigger trail when profit > 1.0x ATR
 BREAKEVEN_BUFFER_ATR = 0.1        # move SL to entry + 0.1x ATR
 TRAIL_DISTANCE_ATR = 1.2          # trail SL at 1.2x ATR behind price
 
-MAX_HOLD_SECONDS  = 600          # force-close stalled trades (10 minutes - optimal for XAUUSD)
+MAX_HOLD_SECONDS  = 900          # force-close stalled trades (15 min — gives 4:1 RR more time)
 RISK_PER_TRADE    = 0.01         # base risk: 1% balance per trade
 DAILY_LOSS_LIMIT  = 0.03         # stop day at -3%
 DAILY_PROFIT_GOAL = 0.05         # target at +5% to activate trailing profit guard
@@ -117,12 +145,12 @@ DAILY_PROFIT_TRAIL_PERCENT = 0.20   # trail floor at peak - 20% of peak profit
 DAILY_PROFIT_MIN_SLACK     = 0.005  # minimum trailing slack of 0.5% of account balance to prevent noise trigger
 DAILY_PROFIT_ATR_SLACK_MULT = 1.5   # dynamic multiplier for ATR-based trailing daily profit slack
 MAX_TRADES_DAY    = 100
-COOLDOWN_SEC      = 60           # normal cooldown per symbol in seconds
+COOLDOWN_SEC      = 30           # normal cooldown per symbol in seconds (faster re-entry on wins)
 LOSS_STREAK_MAX   = 3            # losses in a row -> pause
-LOSS_PAUSE_SEC    = 900          # 15-minute chop pause
-SESSION_START_UTC = 0            # Tokyo open   (06:00 your local time)
-SESSION_END_UTC   = 17           # NY afternoon (23:00 your local time)
-MAX_OPEN_TOTAL    = 2            # max simultaneous positions
+LOSS_PAUSE_SEC    = 600          # 10-minute chop pause (was 15 — shorter, market changes fast)
+SESSION_START_UTC = 0            # no global block — each GitHub Actions run handles its own window
+SESSION_END_UTC   = 24           # bot runs 24h range; cron schedule controls actual trading hours
+MAX_OPEN_TOTAL    = 3            # max simultaneous positions (increased from 2)
 MAGIC             = 234568
 DEVIATION         = 20
 JOURNAL_FILE      = "trade_journal.csv"
@@ -162,8 +190,8 @@ MACD_CONFLUENCE       = True        # require MACD histogram alignment for entry
 # Adaptive QTP Threshold (self-learning)
 ADAPTIVE_QTP_ENABLED  = True        # auto-adjust QTP threshold based on recent win rate
 ADAPTIVE_QTP_LOOKBACK = 20          # last N trades to evaluate
-ADAPTIVE_QTP_MIN      = 65          # minimum QTP threshold floor
-ADAPTIVE_QTP_MAX      = 90          # maximum QTP threshold ceiling
+ADAPTIVE_QTP_MIN      = 60          # minimum QTP threshold floor (allows more trades when performing well)
+ADAPTIVE_QTP_MAX      = 85          # maximum QTP threshold ceiling (tightens when losing)
 
 # Kelly Criterion Risk Sizing
 KELLY_ENABLED         = True        # use Kelly criterion for position sizing
@@ -384,17 +412,18 @@ def compute_avg_atr(rates, period=14, avg_period=50):
     return np.mean(valid[-avg_period:])
 
 def get_session_name(hour_utc):
-    """Return current session name based on UTC hour."""
+    """Return current session name based on UTC hour.
+    Order matters — overlap must be checked first."""
     if 13 <= hour_utc < 17:
-        return "overlap"   # London/NY overlap — best liquidity
-    elif 13 <= hour_utc < 22:
-        return "ny"
-    elif 7 <= hour_utc < 17:
-        return "london"
-    elif 0 <= hour_utc < 8:
-        return "tokyo"
+        return "overlap"   # London/NY overlap — highest liquidity, best setups
+    elif 7 <= hour_utc < 13:
+        return "london"    # London session — strong trends
+    elif 13 <= hour_utc < 21:
+        return "ny"        # NY session (non-overlap hours)
+    elif 0 <= hour_utc < 7:
+        return "tokyo"     # Tokyo/Asia — ranging, lower volatility for Gold
     else:
-        return "off"
+        return "off"       # 21:00-00:00 UTC — thin liquidity, avoid
 
 def get_dynamic_tp_mult(adx):
     """Return TP ATR multiplier based on current ADX trend strength."""
@@ -448,7 +477,162 @@ def get_kelly_risk(base_risk):
     return kelly_risk
 
 
-    global last_news_fetch, news_events
+# ---------------- SMART STRUCTURAL SL / TP ----------------
+
+def get_structural_sl(rates, direction, entry_price, atr):
+    """Find the nearest swing high/low within STRUCT_SL_LOOKBACK candles as the SL anchor.
+    Adds a small ATR buffer beyond the swing to avoid premature stop-outs.
+    Caps the SL distance at MAX_SL_ATR_MULT * ATR to prevent oversized risk.
+    Returns the SL price."""
+    lookback = rates[-2 - STRUCT_SL_LOOKBACK : -1]  # completed candles only
+
+    if direction == "BUY":
+        # SL goes below the lowest low in the lookback window
+        swing_low = np.min(lookback['low'])
+        sl = swing_low - SL_BUFFER_ATR * atr
+        # Cap: SL must not be more than MAX_SL_ATR_MULT * ATR below entry
+        max_sl = entry_price - MAX_SL_ATR_MULT * atr
+        sl = max(sl, max_sl)
+    else:
+        # SL goes above the highest high in the lookback window
+        swing_high = np.max(lookback['high'])
+        sl = swing_high + SL_BUFFER_ATR * atr
+        # Cap: SL must not be more than MAX_SL_ATR_MULT * ATR above entry
+        max_sl = entry_price + MAX_SL_ATR_MULT * atr
+        sl = min(sl, max_sl)
+
+    return sl
+
+
+def get_structural_tp(rates_h1, direction, entry_price, sl_price, atr):
+    """Find the next significant swing high/low on H1 as the TP target.
+    Stops slightly before the swing to take profit before resistance/support reacts.
+    Enforces MIN_RR_RATIO — returns None if the structure target doesn't give 6:1.
+    Falls back to ATR-based TP if no H1 structure found but adjusts to hit 6:1.
+    Returns (tp_price, rr_ratio) or (None, 0) if trade should be skipped."""
+    sl_dist = abs(entry_price - sl_price)
+    if sl_dist <= 0:
+        return None, 0.0
+
+    min_tp_dist = MIN_RR_RATIO * sl_dist  # minimum distance TP must be from entry
+
+    if STRUCTURAL_TP and rates_h1 is not None and len(rates_h1) >= 10:
+        lookback = rates_h1[-1 - STRUCT_TP_LOOKBACK : -1]  # skip live candle
+
+        if direction == "BUY":
+            # Next swing high above entry — find the nearest one that clears our min distance
+            candidate_highs = lookback['high'][lookback['high'] > entry_price + min_tp_dist]
+            if len(candidate_highs) > 0:
+                # Target the nearest reachable swing high (lowest of those above)
+                swing_target = np.min(candidate_highs)
+                tp = swing_target - TP_BUFFER_ATR * atr  # stop slightly before resistance
+                rr = (tp - entry_price) / sl_dist
+                if rr >= MIN_RR_RATIO:
+                    return tp, rr
+        else:
+            # Next swing low below entry — find the nearest one that clears our min distance
+            candidate_lows = lookback['low'][lookback['low'] < entry_price - min_tp_dist]
+            if len(candidate_lows) > 0:
+                swing_target = np.max(candidate_lows)  # nearest below
+                tp = swing_target + TP_BUFFER_ATR * atr  # stop slightly before support
+                rr = (entry_price - tp) / sl_dist
+                if rr >= MIN_RR_RATIO:
+                    return tp, rr
+
+    # Fallback: no H1 structure found — use ATR-based TP scaled to guarantee MIN_RR_RATIO
+    tp_mult = max(get_dynamic_tp_mult(0), MIN_RR_RATIO)  # always at least MIN_RR_RATIO * SL dist
+    if direction == "BUY":
+        tp = entry_price + tp_mult * sl_dist
+    else:
+        tp = entry_price - tp_mult * sl_dist
+
+    rr = tp_mult
+    return tp, rr
+
+
+# ============================================================
+# SMART ENTRY QUALITY FILTERS
+# ============================================================
+
+def check_momentum(rates, direction):
+    """Momentum Confirmation Filter — last MOMENTUM_BARS M1 candles must agree on direction.
+    This prevents entering into a brief spike against the dominant short-term flow.
+
+    BUY  momentum: majority of last N candle closes are rising (close > open)
+    SELL momentum: majority of last N candle closes are falling (close < open)
+
+    Returns True if momentum confirms the direction."""
+    if not MOMENTUM_FILTER_ENABLED:
+        return True
+    n = MOMENTUM_BARS
+    recent = rates[-1 - n : -1]   # last N completed candles
+    if len(recent) < n:
+        return True  # not enough data, don't block
+    bullish = sum(1 for c in recent if c['close'] > c['open'])
+    bearish = sum(1 for c in recent if c['close'] < c['open'])
+    threshold = max(1, n // 2 + 1)  # simple majority
+    if direction == "BUY":
+        return bullish >= threshold
+    else:
+        return bearish >= threshold
+
+
+def check_trend_still_valid(rates, direction, ema200_m5, ema50_m15, ema50_h1, adx):
+    """Re-verify trend alignment just before entry — market can shift between
+    the initial scan and actual order placement.
+
+    Checks:
+      1. Price still on correct side of M5 EMA200 and M15 EMA50
+      2. ADX still above chop threshold
+      3. No recent candle has crossed the trend EMAs (invalidation candle)
+
+    Returns True if trend is still intact."""
+    if not TREND_VALID_CHECK:
+        return True
+    if adx < CHOP_ADX_LEVEL:
+        if BOT_THOUGHTS:
+            log.info("⚠️ [TREND CHECK] ADX %.1f below chop level %d — trend too weak, skipping.", adx, CHOP_ADX_LEVEL)
+        return False
+    mid = rates[-2]['close']
+    if direction == "BUY":
+        return mid > ema200_m5 and mid > ema50_m15
+    else:
+        return mid < ema200_m5 and mid < ema50_m15
+
+
+def compute_smart_sl_tp(rates, rates_h1, direction, entry_price, atr, adx):
+    """Master function: compute structural SL and structural TP, enforce 6:1 RR gate.
+    Returns (sl, tp, sl_dist, rr) or None if the setup doesn't meet minimum RR."""
+    # 1. Get tightest structural SL
+    if STRUCTURAL_SL:
+        sl = get_structural_sl(rates, direction, entry_price, atr)
+    else:
+        sl = entry_price - SL_ATR_MULT * atr if direction == "BUY" else entry_price + SL_ATR_MULT * atr
+
+    sl_dist = abs(entry_price - sl)
+
+    # Guard: if SL distance is essentially zero, skip
+    if sl_dist < atr * 0.05:
+        return None
+
+    # 2. Get structural TP anchored to H1 swing levels
+    tp, rr = get_structural_tp(rates_h1, direction, entry_price, sl, atr)
+
+    # 3. Hard RR gate — skip trade if we can't get 6:1
+    if tp is None or rr < MIN_RR_RATIO:
+        if BOT_THOUGHTS:
+            log.info("⛔ [RR GATE] Skipping %s trade — best achievable RR is %.1f:1 (need %.1f:1).",
+                     direction, rr, MIN_RR_RATIO)
+        return None
+
+    if BOT_THOUGHTS:
+        log.info("✅ [RR GATE] %s trade approved — Structural SL: %.5f | Structural TP: %.5f | RR: %.1f:1",
+                 direction, sl, tp, rr)
+
+    return sl, tp, sl_dist, rr
+
+
+def update_indicators():
     now = time.time()
     
     # 1. Update DXYm cache
@@ -511,6 +695,7 @@ def get_kelly_risk(base_risk):
                     "avg_spread": avg_spread,
                     "macd_hist": macd_hist,
                     "avg_atr": avg_atr,
+                    "rates_h1": rates_h1,   # cached for structural TP calculation
                     "last_update": now
                 }
             elif cache is None:
@@ -523,6 +708,7 @@ def get_kelly_risk(base_risk):
                     "adx": 0.0,
                     "rsi_m15": 50.0,
                     "avg_spread": 0.0,
+                    "rates_h1": None,
                     "last_update": 0.0
                 }
 
@@ -580,7 +766,7 @@ def is_news_paused(symbol):
                 return True, ev['title']
     return False, ""
 
-def get_qtp_score(symbol, direction, mid, ema200_m5, ema50_m15, ema50_h1, dxy_aligned, adx, rvol, rsi_m15, macd_hist=0.0):
+def get_qtp_score(symbol, direction, mid, ema200_m5, ema50_m15, ema50_h1, dxy_aligned, adx, rvol, rsi_m15, macd_hist=0.0, liq_score=0):
     score = 0
     
     # 1. Trend Alignment check M5 + M15 (20 points)
@@ -636,8 +822,203 @@ def get_qtp_score(symbol, direction, mid, ema200_m5, ema50_m15, ema50_h1, dxy_al
         elif direction == "SELL" and macd_hist < 0:
             score += 10   # MACD histogram negative = bearish momentum confirmed
         # MACD divergence (opposing histogram) gives 0 bonus — acts as soft filter
-            
+
+    # 8. Institutional Liquidity Confluence (up to +25, min -10)
+    # liq_score passed in from get_liquidity_confluence() — already capped
+    score += liq_score
+
     return score
+
+
+# ============================================================
+# INSTITUTIONAL LIQUIDITY ENGINE
+# ============================================================
+
+def find_equal_highs_lows(rates, atr):
+    """Detect Equal Highs (BSL) and Equal Lows (SSL) — liquidity pools where
+    retail traders' stop losses cluster. Institution sweeps these before reversing.
+
+    Logic:
+      - Two swing highs within EQH_EQL_TOLERANCE * ATR of each other = Equal High (BSL)
+      - Two swing lows  within EQH_EQL_TOLERANCE * ATR of each other = Equal Low  (SSL)
+      - Must be separated by at least EQH_EQL_MIN_GAP candles (not adjacent wicks)
+
+    Returns:
+      bsl_pools: list of {'price': float, 'idx1': int, 'idx2': int}  <- Buy-side Liquidity
+      ssl_pools: list of {'price': float, 'idx1': int, 'idx2': int}  <- Sell-side Liquidity
+    """
+    bsl_pools = []  # Equal Highs  -> Buy-side  liquidity (retail BUY stops above)
+    ssl_pools = []  # Equal Lows   -> Sell-side liquidity (retail SELL stops below)
+
+    n = len(rates)
+    tolerance = EQH_EQL_TOLERANCE * atr
+    start = max(0, n - 2 - EQH_EQL_LOOKBACK)
+    end   = n - 1  # skip live candle
+
+    highs = rates['high'][start:end]
+    lows  = rates['low'][start:end]
+
+    for i in range(len(highs)):
+        for j in range(i + EQH_EQL_MIN_GAP, len(highs)):
+            # Equal Highs (BSL)
+            if abs(highs[i] - highs[j]) <= tolerance:
+                pool_price = (highs[i] + highs[j]) / 2
+                bsl_pools.append({'price': pool_price, 'idx1': start + i, 'idx2': start + j})
+            # Equal Lows (SSL)
+            if abs(lows[i] - lows[j]) <= tolerance:
+                pool_price = (lows[i] + lows[j]) / 2
+                ssl_pools.append({'price': pool_price, 'idx1': start + i, 'idx2': start + j})
+
+    def deduplicate(pools):
+        if not pools:
+            return []
+        pools_sorted = sorted(pools, key=lambda x: x['price'])
+        result = [pools_sorted[0]]
+        for p in pools_sorted[1:]:
+            if abs(p['price'] - result[-1]['price']) > tolerance:
+                result.append(p)
+        return result
+
+    return deduplicate(bsl_pools), deduplicate(ssl_pools)
+
+
+def get_premium_discount_zone(rates, period=None):
+    """Classify current price as Premium, Discount, or Equilibrium relative to
+    the recent swing range. Institution buys in Discount, sells in Premium.
+
+    Returns:
+      zone: 'premium' | 'discount' | 'equilibrium'
+      pct:  0.0-1.0 (0 = at swing low, 1 = at swing high)
+    """
+    if period is None:
+        period = PREMIUM_DISC_PERIOD
+    n = len(rates)
+    lookback = rates[max(0, n - 1 - period) : n - 1]
+    swing_high = np.max(lookback['high'])
+    swing_low  = np.min(lookback['low'])
+    rng = swing_high - swing_low
+    if rng <= 0:
+        return 'equilibrium', 0.5
+    mid = rates[-2]['close']
+    pct = (mid - swing_low) / rng
+    if pct >= 0.75:
+        return 'premium', pct
+    elif pct <= 0.25:
+        return 'discount', pct
+    else:
+        return 'equilibrium', pct
+
+
+def detect_inducement(rates, direction, atr):
+    """Detect Inducement (IDM): a fake breakout that sweeps retail stops,
+    then closes back with a strong rejection wick — the institutional fingerprint.
+
+    BUY IDM: wick spikes below prior swing low, closes back above with bullish body
+    SELL IDM: wick spikes above prior swing high, closes back below with bearish body
+
+    Returns True if confirmed IDM pattern detected for this direction.
+    """
+    n = len(rates)
+    ref_candles = rates[max(0, n - 2 - IDM_LOOKBACK) : n - 2]
+    if len(ref_candles) < 3:
+        return False
+
+    s = rates[-2]
+    c_open, c_high, c_low, c_close = s['open'], s['high'], s['low'], s['close']
+    c_range = c_high - c_low
+    if c_range <= 0:
+        return False
+
+    if direction == "BUY":
+        recent_low     = np.min(ref_candles['low'])
+        swept_below    = c_low < recent_low
+        closed_above   = c_close > recent_low
+        lower_wick     = min(c_open, c_close) - c_low
+        strong_reject  = (lower_wick / c_range) >= IDM_WICK_RATIO and c_close > c_open
+        return swept_below and closed_above and strong_reject
+    else:
+        recent_high    = np.max(ref_candles['high'])
+        swept_above    = c_high > recent_high
+        closed_below   = c_close < recent_high
+        upper_wick     = c_high - max(c_open, c_close)
+        strong_reject  = (upper_wick / c_range) >= IDM_WICK_RATIO and c_close < c_open
+        return swept_above and closed_below and strong_reject
+
+
+def get_liquidity_confluence(rates, direction, mid, atr):
+    """Master liquidity scorer combining EQH/EQL pools, Premium/Discount zone,
+    and Inducement detection. Returns bonus points for QTP and a context dict for logging.
+
+    Score breakdown (max +25, min -10):
+      +10  SSL swept before BUY  /  BSL swept before SELL  (liquidity collected)
+      +10  BUY in Discount zone  /  SELL in Premium zone   (institutional zone)
+      +15  Inducement (IDM) confirmed                       (highest conviction)
+       -5  Heading INTO pool (not yet swept)                (risky)
+       -5  Trading against institutional zone               (retail trap)
+    """
+    liq_score = 0
+    context   = {}
+
+    if not LIQ_SCORE_ENABLED:
+        return 0, context
+
+    # --- 1. Equal Highs / Equal Lows ---
+    bsl_pools, ssl_pools = find_equal_highs_lows(rates, atr)
+    prox = 2.0 * atr
+
+    near_bsl  = any(abs(mid - p['price']) <= prox for p in bsl_pools)
+    near_ssl  = any(abs(mid - p['price']) <= prox for p in ssl_pools)
+    swept_bsl = any(mid > p['price'] for p in bsl_pools)
+    swept_ssl = any(mid < p['price'] for p in ssl_pools)
+
+    context['bsl_count'] = len(bsl_pools)
+    context['ssl_count'] = len(ssl_pools)
+
+    if direction == "BUY" and swept_ssl:
+        liq_score += 10
+        context['pool_signal'] = "SSL swept -> institutional BUY zone confirmed"
+    elif direction == "SELL" and swept_bsl:
+        liq_score += 10
+        context['pool_signal'] = "BSL swept -> institutional SELL zone confirmed"
+    elif direction == "BUY" and near_bsl:
+        liq_score -= 5
+        context['pool_signal'] = "Approaching BSL ahead — resistance pool, caution"
+    elif direction == "SELL" and near_ssl:
+        liq_score -= 5
+        context['pool_signal'] = "Approaching SSL ahead — support pool, caution"
+    else:
+        context['pool_signal'] = "No active pool confluence"
+
+    # --- 2. Premium / Discount Zone ---
+    zone, zone_pct = get_premium_discount_zone(rates)
+    context['zone']     = zone
+    context['zone_pct'] = round(zone_pct * 100, 1)
+
+    if direction == "BUY" and zone == 'discount':
+        liq_score += 10
+        context['zone_signal'] = f"BUY in Discount ({zone_pct*100:.0f}%) — with institution"
+    elif direction == "SELL" and zone == 'premium':
+        liq_score += 10
+        context['zone_signal'] = f"SELL in Premium ({zone_pct*100:.0f}%) — with institution"
+    elif zone == 'equilibrium':
+        context['zone_signal'] = f"Equilibrium ({zone_pct*100:.0f}%) — fair value, no edge"
+    else:
+        liq_score -= 5
+        context['zone_signal'] = f"{direction} against zone ({zone} {zone_pct*100:.0f}%) — retail trap"
+
+    # --- 3. Inducement (IDM) ---
+    idm = detect_inducement(rates, direction, atr)
+    context['idm'] = idm
+    if idm:
+        liq_score += 15
+        context['idm_signal'] = "IDM CONFIRMED — institution swept stops, reversal imminent"
+    else:
+        context['idm_signal'] = "No IDM"
+
+    liq_score = max(-10, min(25, liq_score))
+    context['total_liq_score'] = liq_score
+    return liq_score, context
+
 
 def find_active_fvgs(rates):
     """Scan back the last SMC_LOOKBACK candles to find active (unmitigated) M1 Fair Value Gaps.
@@ -1262,41 +1643,80 @@ def manage_open():
         count += 1
         current_tickets.add(pos.ticket)
         
-        # 1. Time-stop check
+        # 1. Smart Time-stop check
+        # Only force-close if trade is stalled near breakeven or in loss.
+        # If trade is running in profit, let it breathe — don't cut winners early.
         opened = open_times.get(pos.ticket, pos.time)
         if time.time() - opened > MAX_HOLD_SECONDS:
-            tick = mt5.symbol_info_tick(pos.symbol)
-            if tick is not None:
-                is_buy = pos.type == mt5.POSITION_TYPE_BUY
-                res = mt5.order_send({
-                    "action": mt5.TRADE_ACTION_DEAL, "symbol": pos.symbol,
-                    "position": pos.ticket, "volume": pos.volume,
-                    "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
-                    "price": tick.bid if is_buy else tick.ask,
-                    "deviation": DEVIATION, "magic": MAGIC,
-                    "comment": "time_exit", "type_time": mt5.ORDER_TIME_GTC,
-                    "type_filling": mt5.ORDER_FILLING_IOC})
-                if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    state["last_exit"][pos.symbol] = time.time()
-                log.info("⏱ Time-stop %s #%s profit=%.2f",
-                         pos.symbol, pos.ticket, pos.profit)
-                if BOT_THOUGHTS:
-                    log.info(f"⏱ [TIME LIMIT REACHED] Trade #{pos.ticket} on {pos.symbol} has been open for {int(time.time() - opened)} seconds "
-                             f"(maximum hold time: {MAX_HOLD_SECONDS}s). Force-closing remaining position to protect capital.")
-            open_times.pop(pos.ticket, None)
-            state["partial_closed_tickets"].pop(pos.ticket, None)
-            continue
+            sym_cache = indicators.get(pos.symbol)
+            atr_val = sym_cache["atr"] if sym_cache and sym_cache["atr"] > 0 else 0
+
+            # Smart exit: skip time-stop if position is meaningfully in profit
+            if SMART_TIME_EXIT and atr_val > 0:
+                profit_in_price = abs(pos.profit)
+                sym_info_ts = mt5.symbol_info(pos.symbol)
+                if sym_info_ts:
+                    profit_pts = (profit_in_price / sym_info_ts.trade_tick_value
+                                  * sym_info_ts.trade_tick_size / pos.volume
+                                  if pos.volume > 0 else 0)
+                    if profit_pts > SMART_TIME_EXIT_BUFFER * atr_val and pos.profit > 0:
+                        if BOT_THOUGHTS:
+                            log.info("⏱ [SMART TIME-EXIT] Trade #%d is +%.2f profit — skipping time-stop, letting it run.",
+                                     pos.ticket, pos.profit)
+                        # Don't close, but do tighten SL to protect profit
+                        # (trailing stop logic below will handle it)
+                        pass
+                    else:
+                        # Flat or losing — close it
+                        tick = mt5.symbol_info_tick(pos.symbol)
+                        if tick is not None:
+                            is_buy = pos.type == mt5.POSITION_TYPE_BUY
+                            res = mt5.order_send({
+                                "action": mt5.TRADE_ACTION_DEAL, "symbol": pos.symbol,
+                                "position": pos.ticket, "volume": pos.volume,
+                                "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
+                                "price": tick.bid if is_buy else tick.ask,
+                                "deviation": DEVIATION, "magic": MAGIC,
+                                "comment": "time_exit", "type_time": mt5.ORDER_TIME_GTC,
+                                "type_filling": mt5.ORDER_FILLING_IOC})
+                            if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+                                state["last_exit"][pos.symbol] = time.time()
+                            log.info("⏱ [TIME-STOP] %s #%d profit=%.2f (flat/loss — closed)",
+                                     pos.symbol, pos.ticket, pos.profit)
+                        open_times.pop(pos.ticket, None)
+                        state["partial_closed_tickets"].pop(pos.ticket, None)
+                        continue
+            else:
+                # SMART_TIME_EXIT disabled — original behavior
+                tick = mt5.symbol_info_tick(pos.symbol)
+                if tick is not None:
+                    is_buy = pos.type == mt5.POSITION_TYPE_BUY
+                    res = mt5.order_send({
+                        "action": mt5.TRADE_ACTION_DEAL, "symbol": pos.symbol,
+                        "position": pos.ticket, "volume": pos.volume,
+                        "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
+                        "price": tick.bid if is_buy else tick.ask,
+                        "deviation": DEVIATION, "magic": MAGIC,
+                        "comment": "time_exit", "type_time": mt5.ORDER_TIME_GTC,
+                        "type_filling": mt5.ORDER_FILLING_IOC})
+                    if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+                        state["last_exit"][pos.symbol] = time.time()
+                    log.info("⏱ Time-stop %s #%d profit=%.2f", pos.symbol, pos.ticket, pos.profit)
+                open_times.pop(pos.ticket, None)
+                state["partial_closed_tickets"].pop(pos.ticket, None)
+                continue
 
         symbol = pos.symbol
         cache = indicators.get(symbol)
         if cache is None or cache["atr"] <= 0:
             continue
-            
+
         atr = cache["atr"]
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
             continue
-            
+
+
         sym_info = mt5.symbol_info(symbol)
         if sym_info is None:
             continue
@@ -1483,6 +1903,7 @@ def run():
                 rsi_m15 = cache["rsi_m15"]
                 avg_spread = cache["avg_spread"]
                 macd_hist = cache.get("macd_hist", 0.0)  # v7.0
+                rates_h1_cached = cache.get("rates_h1", None)  # for structural TP
 
                 # v7.0: Volatility Regime Filter — skip if market is spiking or dead
                 vol_regime = state.get("volatility_regime", "normal")
@@ -1662,10 +2083,10 @@ def run():
                              f"   -> Scanning Thoughts: {strat_thoughts}{warn_str}\n"
                              f"   -> Current Spread: {spread/sym_info.point:.1f} points (Average: {avg_spread/sym_info.point:.1f}) | M1 ATR: {atr:.4f}\n")
 
-                # Dynamic cooldown check: triple delay after a loss on this symbol
+                # Dynamic cooldown check: scale delay after a loss on this symbol
                 symbol_cooldown = COOLDOWN_SEC
                 if state["last_trade_loss"].get(symbol, False):
-                    symbol_cooldown = COOLDOWN_SEC * 3
+                    symbol_cooldown = int(COOLDOWN_SEC * LOSS_COOLDOWN_SCALE)
 
                 if (not can_trade or open_count >= MAX_OPEN_TOTAL
                         or time.time() - state["last_exit"][symbol] < symbol_cooldown):
@@ -1741,6 +2162,43 @@ def run():
                         if n % 300 == 0:
                             log.info("DXY is dumping rapidly (change: %.4f) | Blocking Sell setups", dxy_change)
 
+                # Institutional Liquidity Confluence (computed once, shared by all strategies)
+                liq_buy_score,  liq_buy_ctx  = get_liquidity_confluence(rates, "BUY",  mid, atr)
+                liq_sell_score, liq_sell_ctx = get_liquidity_confluence(rates, "SELL", mid, atr)
+
+                if BOT_THOUGHTS:
+                    log.info(
+                        "💧 [LIQUIDITY ENGINE - %s]\n"
+                        "   BUY  liq: %+d pts | Pool: %s | Zone: %s (%s%%) | IDM: %s\n"
+                        "   SELL liq: %+d pts | Pool: %s | Zone: %s (%s%%) | IDM: %s",
+                        symbol,
+                        liq_buy_ctx.get('total_liq_score', 0),
+                        liq_buy_ctx.get('pool_signal', ''),
+                        liq_buy_ctx.get('zone', ''),
+                        liq_buy_ctx.get('zone_pct', ''),
+                        liq_buy_ctx.get('idm_signal', ''),
+                        liq_sell_ctx.get('total_liq_score', 0),
+                        liq_sell_ctx.get('pool_signal', ''),
+                        liq_sell_ctx.get('zone', ''),
+                        liq_sell_ctx.get('zone_pct', ''),
+                        liq_sell_ctx.get('idm_signal', ''),
+                    )
+
+                # ── Pre-entry Quality Gate (shared by ALL strategies) ──────────────
+                # Momentum check: last MOMENTUM_BARS candles must agree on direction.
+                buy_momentum_ok  = check_momentum(rates, "BUY")
+                sell_momentum_ok = check_momentum(rates, "SELL")
+
+                # Trend validity: re-confirm trend is still intact right before entry
+                buy_trend_ok  = check_trend_still_valid(rates, "BUY",  ema200_m5, ema50_m15, ema50_h1, adx)
+                sell_trend_ok = check_trend_still_valid(rates, "SELL", ema200_m5, ema50_m15, ema50_h1, adx)
+
+                if BOT_THOUGHTS:
+                    if not buy_momentum_ok:
+                        log.info("🚫 [MOMENTUM] BUY momentum not confirmed — last %d candles lack bullish agreement.", MOMENTUM_BARS)
+                    if not sell_momentum_ok:
+                        log.info("🚫 [MOMENTUM] SELL momentum not confirmed — last %d candles lack bearish agreement.", MOMENTUM_BARS)
+
                 # Strategy Mode Selector (Regime Switcher)
                 active_mode = STRATEGY_MODE
                 if STRATEGY_MODE == "AUTO":
@@ -1771,28 +2229,30 @@ def run():
 
                     ema50_arr = compute_ema(rates, EMA_PERIOD)
 
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
+                    buy_score  = get_qtp_score(symbol, "BUY",  mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned,  adx, rvol, rsi_m15, macd_hist, liq_buy_score)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist, liq_sell_score)
 
                     # BUY condition
-                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and mid > ema50_arr[-1] and 
-                        c_close > c_open and tick.ask > highest_high):
+                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy
+                            and buy_momentum_ok and buy_trend_ok
+                            and mid > ema50_arr[-1] and c_close > c_open and tick.ask > highest_high):
                         entry_price = tick.ask
-                        sl = entry_price - SL_ATR_MULT * atr
-                        tp = entry_price + get_dynamic_tp_mult(adx) * atr
-                        sl_dist = entry_price - sl
-                        open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
-                        open_count += 1
+                        result = compute_smart_sl_tp(rates, rates_h1_cached, "BUY", entry_price, atr, adx)
+                        if result is not None:
+                            sl, tp, sl_dist, rr = result
+                            open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
+                            open_count += 1
 
                     # SELL condition
-                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and mid < ema50_arr[-1] and 
-                          c_close < c_open and tick.bid < lowest_low):
+                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell
+                              and sell_momentum_ok and sell_trend_ok
+                              and mid < ema50_arr[-1] and c_close < c_open and tick.bid < lowest_low):
                         entry_price = tick.bid
-                        sl = entry_price + SL_ATR_MULT * atr
-                        tp = entry_price - get_dynamic_tp_mult(adx) * atr
-                        sl_dist = sl - entry_price
-                        open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
-                        open_count += 1
+                        result = compute_smart_sl_tp(rates, rates_h1_cached, "SELL", entry_price, atr, adx)
+                        if result is not None:
+                            sl, tp, sl_dist, rr = result
+                            open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
+                            open_count += 1
 
                 elif active_mode == "SWEEP":
                     # Liquidity Sweep Reversal strategy
@@ -1800,8 +2260,8 @@ def run():
                     highest_high = np.max(sweep_rates['high'])
                     lowest_low = np.min(sweep_rates['low'])
 
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
+                    buy_score  = get_qtp_score(symbol, "BUY",  mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned,  adx, rvol, rsi_m15, macd_hist, liq_buy_score)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist, liq_sell_score)
 
                     # BUY condition
                     if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy):
@@ -1812,15 +2272,14 @@ def run():
                             min_idx_in_range = np.argmin(sweep_rates['low'])
                             prev_low_idx = len(rates) - 2 - SWEEP_PERIOD + min_idx_in_range
                             rsi_divergence = rsi[-2] > rsi[prev_low_idx]
-                            
-                            if rsi_divergence:
+                            if rsi_divergence and buy_momentum_ok and buy_trend_ok:
                                 if tick.ask > c_high:
                                     entry_price = tick.ask
-                                    sl = min(c_low - 0.2 * atr, entry_price - SL_ATR_MULT * atr)
-                                    tp = entry_price + get_dynamic_tp_mult(adx) * atr
-                                    sl_dist = entry_price - sl
-                                    open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
-                                    open_count += 1
+                                    result = compute_smart_sl_tp(rates, rates_h1_cached, "BUY", entry_price, atr, adx)
+                                    if result is not None:
+                                        sl, tp, sl_dist, rr = result
+                                        open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
+                                        open_count += 1
 
                     # SELL condition
                     elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell):
@@ -1831,54 +2290,54 @@ def run():
                             max_idx_in_range = np.argmax(sweep_rates['high'])
                             prev_high_idx = len(rates) - 2 - SWEEP_PERIOD + max_idx_in_range
                             rsi_divergence = rsi[-2] < rsi[prev_high_idx]
-                            
-                            if rsi_divergence:
+                            if rsi_divergence and sell_momentum_ok and sell_trend_ok:
                                 if tick.bid < c_low:
                                     entry_price = tick.bid
-                                    sl = max(c_high + 0.2 * atr, entry_price + SL_ATR_MULT * atr)
-                                    tp = entry_price - get_dynamic_tp_mult(adx) * atr
-                                    sl_dist = sl - entry_price
-                                    open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
-                                    open_count += 1
+                                    result = compute_smart_sl_tp(rates, rates_h1_cached, "SELL", entry_price, atr, adx)
+                                    if result is not None:
+                                        sl, tp, sl_dist, rr = result
+                                        open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
+                                        open_count += 1
 
                 elif active_mode == "SMC":
                     # Smart Money Concepts: Fair Value Gap Mitigation
                     bull_fvgs, bear_fvgs = find_active_fvgs(rates)
-                    
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
+
+                    buy_score  = get_qtp_score(symbol, "BUY",  mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned,  adx, rvol, rsi_m15, macd_hist, liq_buy_score)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist, liq_sell_score)
                     
                     # BUY condition: FVG mitigation & rejection
-                    if buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and len(bull_fvgs) > 0:
+                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy
+                            and buy_momentum_ok and buy_trend_ok and len(bull_fvgs) > 0):
                         fvg = bull_fvgs[-1]
                         if c_low <= fvg['ceiling'] and c_close > fvg['floor'] and c_close > c_open:
                             if tick.ask > c_high:
                                 entry_price = tick.ask
-                                sl = min(c_low - 0.2 * atr, entry_price - SL_ATR_MULT * atr)
-                                tp = entry_price + get_dynamic_tp_mult(adx) * atr
-                                  # Fix formatting
-                                sl_dist = entry_price - sl
-                                open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
-                                open_count += 1
-                                
+                                result = compute_smart_sl_tp(rates, rates_h1_cached, "BUY", entry_price, atr, adx)
+                                if result is not None:
+                                    sl, tp, sl_dist, rr = result
+                                    open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
+                                    open_count += 1
+
                     # SELL condition: FVG mitigation & rejection
-                    elif sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and len(bear_fvgs) > 0:
+                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell
+                              and sell_momentum_ok and sell_trend_ok and len(bear_fvgs) > 0):
                         fvg = bear_fvgs[-1]
                         if c_high >= fvg['floor'] and c_close < fvg['ceiling'] and c_close < c_open:
                             if tick.bid < c_low:
                                 entry_price = tick.bid
-                                sl = max(c_high + 0.2 * atr, entry_price + SL_ATR_MULT * atr)
-                                tp = entry_price - get_dynamic_tp_mult(adx) * atr
-                                sl_dist = sl - entry_price
-                                open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
-                                open_count += 1
+                                result = compute_smart_sl_tp(rates, rates_h1_cached, "SELL", entry_price, atr, adx)
+                                if result is not None:
+                                    sl, tp, sl_dist, rr = result
+                                    open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
+                                    open_count += 1
 
                 elif active_mode == "ORB":
                     # Opening Range Breakout
                     orb_range = get_orb_ranges(symbol)
-                    
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
+
+                    buy_score  = get_qtp_score(symbol, "BUY",  mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned,  adx, rvol, rsi_m15, macd_hist, liq_buy_score)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist, liq_sell_score)
                     
                     hour = datetime.now(timezone.utc).hour
                     if hour >= 13:
@@ -1896,87 +2355,91 @@ def run():
                         range_low = orb_range[low_key]
                         
                         # BUY condition: breakout of range high
-                        if buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and tick.ask > range_high and c_close > c_open:
+                        if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy
+                                and buy_momentum_ok and buy_trend_ok
+                                and tick.ask > range_high and c_close > c_open):
                             entry_price = tick.ask
-                            sl = entry_price - SL_ATR_MULT * atr
-                            tp = entry_price + get_dynamic_tp_mult(adx) * atr
-                            sl_dist = entry_price - sl
-                            open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
-                            open_count += 1
-                            
+                            result = compute_smart_sl_tp(rates, rates_h1_cached, "BUY", entry_price, atr, adx)
+                            if result is not None:
+                                sl, tp, sl_dist, rr = result
+                                open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
+                                open_count += 1
+
                         # SELL condition: breakout of range low
-                        elif sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and tick.bid < range_low and c_close < c_open:
+                        elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell
+                                  and sell_momentum_ok and sell_trend_ok
+                                  and tick.bid < range_low and c_close < c_open):
                             entry_price = tick.bid
-                            sl = entry_price + SL_ATR_MULT * atr
-                            tp = entry_price - get_dynamic_tp_mult(adx) * atr
-                            sl_dist = sl - entry_price
-                            open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
-                            open_count += 1
+                            result = compute_smart_sl_tp(rates, rates_h1_cached, "SELL", entry_price, atr, adx)
+                            if result is not None:
+                                sl, tp, sl_dist, rr = result
+                                open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
+                                open_count += 1
 
                 elif active_mode == "OB":
                     # Smart Money Concepts: Order Block Mitigation
                     bull_obs, bear_obs = find_active_order_blocks(rates, atr)
-                    
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
+
+                    buy_score  = get_qtp_score(symbol, "BUY",  mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned,  adx, rvol, rsi_m15, macd_hist, liq_buy_score)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist, liq_sell_score)
                     
                     # BUY condition: Price tests Bullish OB ceiling and rejects it
-                    if buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and len(bull_obs) > 0:
+                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy
+                            and buy_momentum_ok and buy_trend_ok and len(bull_obs) > 0):
                         ob = bull_obs[-1]
                         if c_low <= ob['ceiling'] and c_close > ob['floor'] and c_close > c_open:
                             if tick.ask > c_high:
                                 entry_price = tick.ask
-                                sl = min(c_low - 0.2 * atr, entry_price - SL_ATR_MULT * atr)
-                                tp = entry_price + get_dynamic_tp_mult(adx) * atr
-                                sl_dist = entry_price - sl
-                                open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
-                                open_count += 1
-                                
+                                result = compute_smart_sl_tp(rates, rates_h1_cached, "BUY", entry_price, atr, adx)
+                                if result is not None:
+                                    sl, tp, sl_dist, rr = result
+                                    open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
+                                    open_count += 1
+
                     # SELL condition: Price tests Bearish OB floor and rejects it
-                    elif sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and len(bear_obs) > 0:
+                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell
+                              and sell_momentum_ok and sell_trend_ok and len(bear_obs) > 0):
                         ob = bear_obs[-1]
                         if c_high >= ob['floor'] and c_close < ob['ceiling'] and c_close < c_open:
                             if tick.bid < c_low:
                                 entry_price = tick.bid
-                                sl = max(c_high + 0.2 * atr, entry_price + SL_ATR_MULT * atr)
-                                tp = entry_price - get_dynamic_tp_mult(adx) * atr
-                                sl_dist = sl - entry_price
-                                open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
-                                open_count += 1
+                                result = compute_smart_sl_tp(rates, rates_h1_cached, "SELL", entry_price, atr, adx)
+                                if result is not None:
+                                    sl, tp, sl_dist, rr = result
+                                    open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
+                                    open_count += 1
 
                 else: # active_mode == "BOUNCE"
                     # Pullback Bounce strategy
                     ema50_arr = compute_ema(rates, EMA_PERIOD)
                     ema50_val = ema50_arr[-2]
 
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
+                    buy_score  = get_qtp_score(symbol, "BUY",  mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned,  adx, rvol, rsi_m15, macd_hist, liq_buy_score)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist, liq_sell_score)
 
                     # BUY condition
-                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and mid > ema50_arr[-1]):
-                        # Touch and bounce check
+                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy
+                            and buy_momentum_ok and buy_trend_ok and mid > ema50_arr[-1]):
                         if (c_low <= ema50_val and c_close > ema50_val and c_close > c_open):
-                            # Trigger: breaks setup high
                             if tick.ask > c_high:
                                 entry_price = tick.ask
-                                sl = min(c_low - 0.2 * atr, entry_price - SL_ATR_MULT * atr)
-                                tp = entry_price + get_dynamic_tp_mult(adx) * atr
-                                sl_dist = entry_price - sl
-                                open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
-                                open_count += 1
+                                result = compute_smart_sl_tp(rates, rates_h1_cached, "BUY", entry_price, atr, adx)
+                                if result is not None:
+                                    sl, tp, sl_dist, rr = result
+                                    open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
+                                    open_count += 1
 
                     # SELL condition
-                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and mid < ema50_arr[-1]):
-                        # Touch and bounce check
+                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell
+                              and sell_momentum_ok and sell_trend_ok and mid < ema50_arr[-1]):
                         if (c_high >= ema50_val and c_close < ema50_val and c_close < c_open):
-                            # Trigger: breaks setup low
                             if tick.bid < c_low:
                                 entry_price = tick.bid
-                                sl = max(c_high + 0.2 * atr, entry_price + SL_ATR_MULT * atr)
-                                tp = entry_price - get_dynamic_tp_mult(adx) * atr
-                                sl_dist = sl - entry_price
-                                open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
-                                open_count += 1
+                                result = compute_smart_sl_tp(rates, rates_h1_cached, "SELL", entry_price, atr, adx)
+                                if result is not None:
+                                    sl, tp, sl_dist, rr = result
+                                    open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
+                                    open_count += 1
 
             n += 1
             if n % 30 == 0:  # status every ~30s
