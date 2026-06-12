@@ -189,7 +189,7 @@ jobs:
               "    comm_c = getattr(res_close, 'comment', 'Unknown error')",
               "    print(f'[WARNING]: Test trade close failed! Retcode: {ret_c}, Comment: {comm_c}')",
               "else:",
-              "    print(f'[SUCCESS]: Test trade closed successfully! Profit/Loss: {res_close.profit} USD')",
+              "    print(f'[SUCCESS]: Test trade closed successfully! Result code: {res_close.retcode}')",
               "mt5.shutdown()"
           )
           $code | Out-File -FilePath "temp_check.py" -Encoding utf8
