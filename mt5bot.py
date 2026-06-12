@@ -1335,35 +1335,78 @@ def journal_closed_deals():
 
 # ---------------- CONNECTION ----------------
 def connect():
-    if not mt5.initialize(login=LOGIN, server=SERVER, password=PASSWORD, portable=PORTABLE):
+    # Always use explicit path for GitHub Actions reliability
+    init_ok = mt5.initialize(
+        path="C:\\MT5\\terminal64.exe",
+        login=LOGIN, server=SERVER, password=PASSWORD, portable=PORTABLE
+    )
+    if not init_ok:
+        # Fallback: try default init, then other known paths
         fallback_paths = [
-            "C:\\MT5\\terminal64.exe",
+            None,  # default (let MT5 library find it)
             "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe",
             "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
             "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
         ]
-        initialized = False
         for path in fallback_paths:
-            log.info("Default MT5 init failed. Retrying with path: %s", path)
-            if mt5.initialize(path=path, login=LOGIN, server=SERVER, password=PASSWORD, portable=PORTABLE):
-                initialized = True
+            if path:
+                log.info("Retrying MT5 init with path: %s", path)
+                init_ok = mt5.initialize(path=path, login=LOGIN, server=SERVER,
+                                         password=PASSWORD, portable=PORTABLE)
+            else:
+                log.info("Retrying MT5 init with default path...")
+                init_ok = mt5.initialize(login=LOGIN, server=SERVER,
+                                         password=PASSWORD, portable=PORTABLE)
+            if init_ok:
                 break
-        if not initialized:
+        if not init_ok:
             raise RuntimeError(f"MT5 init failed: {mt5.last_error()}")
+
     info = mt5.account_info()
-    log.info("Connected: %s | Balance: %.2f %s", info.login, info.balance,
-             info.currency)
+    log.info("Connected: %s | Balance: %.2f %s", info.login, info.balance, info.currency)
+
+    # Symbol setup
     for s in SYMBOLS[:]:
         if not mt5.symbol_select(s, True):
             log.warning("Symbol %s not available, removing", s)
             SYMBOLS.remove(s)
-    # Subscribe to DXYm for correlation checking
+
+    # DXYm correlation (optional — warn only)
     if not mt5.symbol_select("DXYm", True):
-        log.warning("USD Index symbol DXYm not available for correlation check!")
-    if not mt5.terminal_info().trade_allowed:
-        log.warning("Algo Trading DISABLED in terminal!")
-    notify(f"🤖 Bot online. Balance {info.balance:.2f} USD. "
-           f"Hunting: {', '.join(SYMBOLS)}")
+        log.warning("DXYm not available — DXY correlation filter disabled.")
+
+    # AutoTrading check — retry up to 3 times with delay (terminal may need a moment)
+    trade_allowed = False
+    for attempt in range(3):
+        term = mt5.terminal_info()
+        if term.trade_allowed:
+            trade_allowed = True
+            log.info("✅ AutoTrading is ENABLED in terminal.")
+            break
+        log.warning("⚠️ AutoTrading not yet enabled (attempt %d/3). Waiting 5s...", attempt + 1)
+        import time as _time
+        _time.sleep(5)
+
+    if not trade_allowed:
+        # Last resort: try re-initializing once more with explicit path
+        mt5.shutdown()
+        log.warning("AutoTrading still disabled — re-initializing MT5 with explicit path...")
+        mt5.initialize(path="C:\\MT5\\terminal64.exe", login=LOGIN,
+                       server=SERVER, password=PASSWORD, portable=PORTABLE)
+        term = mt5.terminal_info()
+        if term and term.trade_allowed:
+            log.info("✅ AutoTrading ENABLED after re-init.")
+        else:
+            log.warning(
+                "⚠️ AutoTrading still DISABLED. Bot will run but orders may be rejected. "
+                "Enable AutoTrading manually in MT5 terminal if running locally."
+            )
+
+    # Account trading permission (broker-level — this is fatal)
+    if not info.trade_allowed:
+        raise RuntimeError("Account trading is DISABLED by broker. Check account settings.")
+
+    notify(f"🤖 Bot online. Balance {info.balance:.2f} USD. Hunting: {', '.join(SYMBOLS)}")
 
 # ---------------- GUARDS ----------------
 def close_all_positions(reason=""):
