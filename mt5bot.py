@@ -1,25 +1,3 @@
-"""
-MT5 Pro Dual-Strategy Bot (Exness) - Multi-Symbol Edition v6.0
-- Supports both Trendline/EMA Pullback Bounce and Donchian Range Breakout strategies
-- Strategy selection via CONFIG flag: STRATEGY_MODE = "BOUNCE" or "BREAKOUT"
-- Mode A (BOUNCE): enters dynamic EMA 50 touches in trend direction with tight swing SL
-- Mode B (BREAKOUT): enters 10-period consolidative Donchian range breakouts
-- Trend-aligned entry filter: Multi-Timeframe Confirmation (M1 EMA 50 + M5 EMA 200)
-- Trend Strength Guard: M1 ADX(14) must be >= 20 to trade, avoiding choppy consolidations
-- Setup candle filters: body ratio >= 50%, range >= 30% of ATR
-- Relative Volume (RVOL) filter: requires setup candle volume >= 1.5x of 20-period M1 average
-- Dynamic Sizing: Sized using adaptive balance risk based on consecutive loss streaks
-- Robotic Drawdown Protection: Halves trade risk percentage on consecutive losses (1% -> 0.5% -> 0.25%)
-- Adaptive Cooldown: Triples cooldown (180s instead of 60s) for a symbol if the last trade was a loss
-- Partial Profit Scale-Out: closes 50% of trade volume at 1.5x ATR (or 2.0x ATR for Breakouts) and moves remaining SL to BE
-- Dynamic Breakeven lock-in and Trailing Stop-Loss based on M1 ATR
-- 3-loss circuit breaker: pauses 15 min in choppy markets
-- Session filter: trades only 07:00-17:00 UTC (= 13:00-23:00 UTC+6)
-- Daily loss limit, daily profit goal, CSV journal, Telegram alerts
-Requires: pip install MetaTrader5 numpy
-DISCLAIMER: High-frequency scalping is high risk. Demo account only.
-"""
-
 import os
 import csv
 import time
@@ -34,6 +12,7 @@ import MetaTrader5 as mt5
 SERVER   = os.environ.get("MT5_SERVER")
 LOGIN    = os.environ.get("MT5_LOGIN")
 PASSWORD = os.environ.get("MT5_PASSWORD")
+PORTABLE = os.environ.get("GITHUB_ACTIONS") == "true"
 
 # Fallback to local_config.py for local development
 if not SERVER or not LOGIN or not PASSWORD:
@@ -628,8 +607,9 @@ def journal_closed_deals():
 
 # ---------------- CONNECTION ----------------
 def connect():
-    if not mt5.initialize(login=LOGIN, server=SERVER, password=PASSWORD):
+    if not mt5.initialize(login=LOGIN, server=SERVER, password=PASSWORD, portable=PORTABLE):
         fallback_paths = [
+            "C:\\MT5\\terminal64.exe",
             "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe",
             "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
             "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
@@ -637,7 +617,7 @@ def connect():
         initialized = False
         for path in fallback_paths:
             log.info("Default MT5 init failed. Retrying with path: %s", path)
-            if mt5.initialize(path=path, login=LOGIN, server=SERVER, password=PASSWORD):
+            if mt5.initialize(path=path, login=LOGIN, server=SERVER, password=PASSWORD, portable=PORTABLE):
                 initialized = True
                 break
         if not initialized:
