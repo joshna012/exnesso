@@ -70,11 +70,7 @@ jobs:
                       New-Item -ItemType Directory -Path $configPath -Force
                   }
                   $iniPath = Join-Path $configPath "common.ini"
-                  $iniContent = @"
-[Experts]
-AllowLiveTrading=1
-AllowDllImport=1
-"@
+                  $iniContent = "[Experts]`r`nAllowLiveTrading=1`r`nAllowDllImport=1"
                   Set-Content -Path $iniPath -Value $iniContent -Encoding Unicode
                   Write-Host "Configured MT5 at $iniPath"
               }
