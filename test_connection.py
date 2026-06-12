@@ -21,6 +21,7 @@ LOGIN = int(LOGIN)
 log.info(f"Initializing MT5 (portable={PORTABLE})...")
 if not mt5.initialize(login=LOGIN, server=SERVER, password=PASSWORD, portable=PORTABLE):
     fallback_paths = [
+        "C:\\MT5\\terminal64.exe",
         "C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe",
         "C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe",
         "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
