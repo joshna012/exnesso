@@ -77,12 +77,12 @@ jobs:
           Copy-Item -Path $installedPath -Destination "C:\MT5" -Recurse -Force
           Write-Host "Portable instance ready at C:\MT5"
 
-      # ── KEY FIX ─────────────────────────────────────────────────────────────
+      # == KEY FIX =============================================================
       # MT5 portable mode reads terminal.ini (not common.ini) for AutoTrading.
       # We write BOTH files and also pre-create the portable data folder so
       # MT5 finds the config before the Python API calls initialize().
-      # ────────────────────────────────────────────────────────────────────────
-      - name: Configure MT5 — Enable AutoTrading (terminal.ini + common.ini)
+      # ========================================================================
+      - name: Configure MT5 - Enable AutoTrading (terminal.ini + common.ini)
         shell: powershell
         run: |
           # --- 1. terminal.ini in the C:\MT5 root (portable data dir) ---------
@@ -143,7 +143,7 @@ jobs:
               "print(f'trade_allowed (account) : {info.trade_allowed}')",
               "",
               "if not term.trade_allowed:",
-              "    print('WARNING: AutoTrading not detected. Proceeding anyway — bot will warn if orders fail.')",
+              "    print('WARNING: AutoTrading not detected. Proceeding anyway - bot will warn if orders fail.')",
               "",
               "if not info.trade_allowed:",
               "    print('ERROR: Account trading is disabled by broker!')",
