@@ -54,7 +54,7 @@ EMA_H1_PERIOD      = 50           # period for macro trend filter H1 EMA
 ADX_PERIOD         = 14           # period for ADX calculation
 ADX_MIN_LEVEL      = 20           # minimum trend strength (ADX >= 20 to trade)
 RSI_PERIOD         = 14           # Relative Strength Index period for sweep confirmation
-SPREAD_ATR_LIMIT   = 0.35         # max ratio of spread / ATR to allow trading
+SPREAD_ATR_LIMIT   = 0.55         # max ratio of spread / ATR — relaxed for Gold's natural wide spread
 SPREAD_MA_PERIOD   = 20           # lookback for average spread to detect widening
 SL_ATR_MULT        = 1.0          # stop-loss = 1.0x ATR fallback (structural SL preferred)
 TP_ATR_MULT        = 3.0          # initial take-profit = 3.0x ATR (R:R ratio of 1:3)
@@ -89,7 +89,7 @@ TREND_VALID_CHECK       = True    # re-check trend still intact before each entr
 SMART_TIME_EXIT         = True    # don't time-exit if trade is profitable — let it run
 SMART_TIME_EXIT_BUFFER  = 0.3     # only time-exit if profit < 0.3x ATR (near breakeven or loss)
 LOSS_COOLDOWN_SCALE     = 2       # after loss: cooldown = COOLDOWN_SEC × this (was 3x, now 2x)
-CHOP_ADX_LEVEL          = 18      # if ADX drops below this after entry, it's choppy — tighten SL
+CHOP_ADX_LEVEL          = 15      # if ADX drops below this after entry, it's choppy — skip entry
  
 # Economic News Calendar Settings
 NEWS_URL           = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
@@ -2082,8 +2082,14 @@ def run():
 
                 # Dynamic Spread Widening Guard
                 if avg_spread > 0 and spread > 1.5 * avg_spread:
+                    if n % 100 == 0:
+                        log.info("⏸ [SPREAD] Widened to %.1f pts (avg %.1f pts) — skipping %s",
+                                 spread / sym_info.point, avg_spread / sym_info.point, symbol)
                     continue
                 if spread / atr > SPREAD_ATR_LIMIT:
+                    if n % 100 == 0:
+                        log.info("⏸ [SPREAD/ATR] ratio %.2f > limit %.2f (spread=%.1f pts, ATR=%.5f) — skipping %s",
+                                 spread / atr, SPREAD_ATR_LIMIT, spread / sym_info.point, atr, symbol)
                     continue
 
                 # Synthetic Retail Sentiment (SRS) extreme exhaustion guards
