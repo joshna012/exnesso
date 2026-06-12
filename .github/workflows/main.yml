@@ -95,7 +95,52 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Verifying MT5 connection and trade execution capability..."
-          python test_connection.py
+          $code = @(
+              "import os, sys",
+              "import MetaTrader5 as mt5",
+              "login = int(os.environ.get('MT5_LOGIN', 0))",
+              "server = os.environ.get('MT5_SERVER', '')",
+              "password = os.environ.get('MT5_PASSWORD', '')",
+              "portable = os.environ.get('GITHUB_ACTIONS') == 'true'",
+              "print('Initializing MT5 connection...')",
+              "if not mt5.initialize(login=login, server=server, password=password, portable=portable):",
+              "    fallback_paths = [",
+              "        'C:\\MT5\\terminal64.exe',",
+              "        'C:\\Program Files\\MetaTrader 5 EXNESS\\terminal64.exe',",
+              "        'C:\\Program Files\\Exness MetaTrader 5\\terminal64.exe',",
+              "        'C:\\Program Files\\MetaTrader 5\\terminal64.exe'",
+              "    ]",
+              "    initialized = False",
+              "    for p in fallback_paths:",
+              "        print(f'Default init failed. Retrying: {p}')",
+              "        if mt5.initialize(path=p, login=login, server=server, password=password, portable=portable):",
+              "            initialized = True",
+              "            break",
+              "    if not initialized:",
+              "        print(f'MT5 initialization failed: {mt5.last_error()}')",
+              "        sys.exit(1)",
+              "print('=== MT5 CONNECTION SUCCESS ===')",
+              "info = mt5.account_info()",
+              "print(f'Account Login: {info.login}')",
+              "print(f'Account Balance: {info.balance} {info.currency}')",
+              "print(f'Account Broker/Server: {info.server}')",
+              "print('=== AUTOMATION CHECKS ===')",
+              "term = mt5.terminal_info()",
+              "if term.trade_allowed:",
+              "    print('✅ SUCCESS: Algorithmic Trading (AutoTrading) is ENABLED in terminal!')",
+              "else:",
+              "    print('❌ ERROR: Algorithmic Trading is DISABLED in terminal!')",
+              "    sys.exit(1)",
+              "if info.trade_allowed:",
+              "    print('✅ SUCCESS: Trading is allowed on this Account!')",
+              "else:",
+              "    print('❌ ERROR: Trading is not allowed on this Account!')",
+              "    sys.exit(1)",
+              "mt5.shutdown()"
+          )
+          $code | Out-File -FilePath "temp_check.py" -Encoding utf8
+          python temp_check.py
+          Remove-Item -Path "temp_check.py" -ErrorAction SilentlyContinue
         env:
           PYTHONUNBUFFERED: "1"
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
