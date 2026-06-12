@@ -31,20 +31,23 @@ import numpy as np
 import MetaTrader5 as mt5
 
 # ---------------- CONFIG ----------------
-SERVER   = os.environ.get("MT5_SERVER")
-LOGIN    = os.environ.get("MT5_LOGIN")
-PASSWORD = os.environ.get("MT5_PASSWORD")
-PORTABLE = os.environ.get("GITHUB_ACTIONS") == "true"
+SERVER     = os.environ.get("MT5_SERVER")
+LOGIN      = os.environ.get("MT5_LOGIN")
+PASSWORD   = os.environ.get("MT5_PASSWORD")
+PORTABLE   = os.environ.get("GITHUB_ACTIONS") == "true"
+FB_API_KEY = os.environ.get("FB_API_KEY")
 
 # Fallback to local_config.py for local development
-if not SERVER or not LOGIN or not PASSWORD:
+if not SERVER or not LOGIN or not PASSWORD or not FB_API_KEY:
     try:
         import local_config
-        SERVER   = SERVER or getattr(local_config, "MT5_SERVER", None)
-        LOGIN    = LOGIN or getattr(local_config, "MT5_LOGIN", None)
-        PASSWORD = PASSWORD or getattr(local_config, "MT5_PASSWORD", None)
+        SERVER     = SERVER or getattr(local_config, "MT5_SERVER", None)
+        LOGIN      = LOGIN or getattr(local_config, "MT5_LOGIN", None)
+        PASSWORD   = PASSWORD or getattr(local_config, "MT5_PASSWORD", None)
+        FB_API_KEY = FB_API_KEY or getattr(local_config, "FB_API_KEY", None)
     except ImportError:
         pass
+
 
 # Verify credentials are set
 if not SERVER or not LOGIN or not PASSWORD:
@@ -566,16 +569,144 @@ def get_orb_ranges(symbol):
             
     return symbol_ranges
 
-# ---------------- TELEGRAM ----------------
-def notify(msg):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return
+# ---------------- NOTIFICATIONS (TELEGRAM & FACEBOOK) ----------------
+def beautify_message_for_messenger(msg):
     try:
-        url = (f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?"
-               + urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": msg}))
-        urllib.request.urlopen(url, timeout=5)
-    except Exception as e:
-        log.warning("Telegram failed: %s", e)
+        # Trade closed
+        if ("closed:" in msg) and ("Balance:" in msg):
+            parts = msg.split("closed:")
+            prefix = parts[0].strip().split()
+            emoji = prefix[0]
+            symbol = prefix[1]
+            
+            subparts = parts[1].split("|")
+            profit_str = subparts[0].replace("USD", "").strip()
+            balance_str = subparts[1].replace("Balance:", "").replace("USD", "").strip()
+            
+            return (
+                "📊 [TRADE CLOSED REPORT] 📊\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Asset: {symbol}\n"
+                f"Outcome: {emoji} {profit_str} USD\n"
+                f"New Balance: {balance_str} USD\n"
+                "━━━━━━━━━━━━━━━━━━━━━"
+            )
+            
+        # Trade opened
+        elif msg.startswith("📈"):
+            parts = msg.replace("📈", "").strip().split()
+            direction = parts[0]
+            symbol = parts[1]
+            volume = parts[2]
+            price = parts[5]
+            
+            bracket_idx = msg.find("[")
+            risk_val = "N/A"
+            qtp_val = "N/A"
+            if bracket_idx != -1:
+                bracket_content = msg[bracket_idx+1:-1]
+                sub_parts = bracket_content.split(",")
+                for sp in sub_parts:
+                    if "Risk:" in sp:
+                        risk_val = sp.split("Risk:")[1].strip()
+                    if "QTP:" in sp:
+                        qtp_val = sp.split("QTP:")[1].strip()
+            
+            return (
+                "🚀 [TRADE EXECUTED] 🚀\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Action: {direction} {symbol}\n"
+                f"Volume: {volume} Lots\n"
+                f"Price: {price}\n"
+                f"Risk: {risk_val}\n"
+                f"Setup Quality: {qtp_val}/100\n"
+                "━━━━━━━━━━━━━━━━━━━━━"
+            )
+            
+        # Bot startup
+        elif "Bot online" in msg:
+            balance = msg.split("Balance")[1].split("USD")[0].strip()
+            symbols = msg.split("Hunting:")[1].strip()
+            return (
+                "🤖 [BOT SYSTEM ONLINE] 🤖\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                "Status: Operational\n"
+                f"Initial Balance: {balance} USD\n"
+                f"Assets: {symbols}\n"
+                "━━━━━━━━━━━━━━━━━━━━━"
+            )
+            
+        # Daily target achieved
+        elif "Trailing Daily Profit hit" in msg:
+            pnl = msg.split("Locked in")[1].split("profit")[0].strip()
+            balance = msg.split("Balance:")[1].strip()
+            return (
+                "🎯 [DAILY GOAL COMPLETED] 🎯\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Secured Profit: {pnl}\n"
+                f"Final Balance: {balance} USD\n"
+                "Status: Finished for the day.\n"
+                "━━━━━━━━━━━━━━━━━━━━━"
+            )
+            
+        # Cooldown circuit breaker
+        elif msg.startswith("⚠️") and "losses in a row" in msg:
+            parts = msg.replace("⚠️", "").strip().split()
+            streak = parts[0]
+            minutes = "N/A"
+            if "Pausing" in msg:
+                minutes = msg.split("Pausing")[1].split("min")[0].strip()
+            return (
+                "⚠️ [CIRCUIT BREAKER TRIGGERED] ⚠️\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                f"Streak: {streak} Consecutive Losses\n"
+                f"Action: Cooldown Initiated ({minutes} min)\n"
+                "━━━━━━━━━━━━━━━━━━━━━"
+            )
+            
+        # Daily loss limit hit
+        elif "Daily loss limit hit" in msg:
+            return (
+                "🛑 [DRAWDOWN BREACH ALERT] 🛑\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                "Reason: Daily Loss Limit Reached\n"
+                "Action: Closed All Open Positions\n"
+                "Status: Paused until tomorrow.\n"
+                "━━━━━━━━━━━━━━━━━━━━━"
+            )
+            
+        # Bot shutdown
+        elif "Bot stopped" in msg:
+            return (
+                "🛑 [BOT SYSTEM OFFLINE] 🛑\n"
+                "━━━━━━━━━━━━━━━━━━━━━\n"
+                "Status: Stopped safely.\n"
+                "━━━━━━━━━━━━━━━━━━━━━"
+            )
+            
+    except Exception:
+        pass
+    return msg
+
+def notify(msg):
+    # Send to Telegram if credentials are set
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        try:
+            url = (f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage?"
+                   + urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": msg}))
+            urllib.request.urlopen(url, timeout=5)
+        except Exception as e:
+            log.warning("Telegram failed: %s", e)
+
+    # Send to Facebook Messenger via CallMeBot if key is set
+    if FB_API_KEY:
+        try:
+            fb_msg = beautify_message_for_messenger(msg)
+            url = (f"https://api.callmebot.com/facebook/send.php?"
+                   + urllib.parse.urlencode({"apikey": FB_API_KEY, "text": fb_msg}))
+            urllib.request.urlopen(url, timeout=5)
+        except Exception as e:
+            log.warning("Facebook notification failed: %s", e)
 
 # ---------------- JOURNAL ----------------
 def init_journal():
