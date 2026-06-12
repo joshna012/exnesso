@@ -87,15 +87,7 @@ jobs:
         run: |
           # --- 1. terminal.ini in the C:\MT5 root (portable data dir) ---------
           $termIni = "C:\MT5\terminal.ini"
-          $termContent = @"
-[Experts]
-Enabled=1
-AllowLiveTrading=1
-AllowDllImport=1
-
-[AutoTrading]
-Enabled=1
-"@
+          $termContent = "[Experts]`r`nEnabled=1`r`nAllowLiveTrading=1`r`nAllowDllImport=1`r`n`r`n[AutoTrading]`r`nEnabled=1"
           Set-Content -Path $termIni -Value $termContent -Encoding Ascii
           Write-Host "Written terminal.ini to $termIni"
 
@@ -103,15 +95,7 @@ Enabled=1
           $configDir = "C:\MT5\config"
           New-Item -ItemType Directory -Path $configDir -Force | Out-Null
           $commonIni = Join-Path $configDir "common.ini"
-          $commonContent = @"
-[Experts]
-Enabled=1
-AllowLiveTrading=1
-AllowDllImport=1
-
-[AutoTrading]
-Enabled=1
-"@
+          $commonContent = "[Experts]`r`nEnabled=1`r`nAllowLiveTrading=1`r`nAllowDllImport=1`r`n`r`n[AutoTrading]`r`nEnabled=1"
           Set-Content -Path $commonIni -Value $commonContent -Encoding Ascii
           # Make read-only so MT5 cannot overwrite our settings on first launch
           Set-ItemProperty -Path $commonIni -Name IsReadOnly -Value $true
@@ -133,43 +117,42 @@ Enabled=1
       - name: Verify MT5 Connection and AutoTrading
         shell: powershell
         run: |
-          $code = @"
-import os, sys, time
-import MetaTrader5 as mt5
-
-login    = int(os.environ.get('MT5_LOGIN', 0))
-server   = os.environ.get('MT5_SERVER', '')
-password = os.environ.get('MT5_PASSWORD', '')
-
-print('Initializing MT5...')
-ok = mt5.initialize(path=r'C:\MT5\terminal64.exe',
-                    login=login, server=server, password=password,
-                    portable=True)
-if not ok:
-    print(f'MT5 init failed: {mt5.last_error()}')
-    sys.exit(1)
-
-info = mt5.account_info()
-term = mt5.terminal_info()
-print(f'=== MT5 CONNECTION SUCCESS ===')
-print(f'Account : {info.login}')
-print(f'Balance : {info.balance} {info.currency}')
-print(f'Server  : {info.server}')
-print(f'trade_allowed (terminal): {term.trade_allowed}')
-print(f'trade_allowed (account) : {info.trade_allowed}')
-
-if not term.trade_allowed:
-    # AutoTrading still off — try enabling via mt5 itself then recheck
-    print('WARNING: AutoTrading not detected. Proceeding anyway — bot will warn if orders fail.')
-
-if not info.trade_allowed:
-    print('ERROR: Account trading is disabled by broker!')
-    mt5.shutdown()
-    sys.exit(1)
-
-print('=== ALL CHECKS PASSED ===')
-mt5.shutdown()
-"@
+          $code = @(
+              "import os, sys, time",
+              "import MetaTrader5 as mt5",
+              "",
+              "login    = int(os.environ.get('MT5_LOGIN', 0))",
+              "server   = os.environ.get('MT5_SERVER', '')",
+              "password = os.environ.get('MT5_PASSWORD', '')",
+              "",
+              "print('Initializing MT5...')",
+              "ok = mt5.initialize(path=r'C:\MT5\terminal64.exe',",
+              "                    login=login, server=server, password=password,",
+              "                    portable=True)",
+              "if not ok:",
+              "    print(f'MT5 init failed: {mt5.last_error()}')",
+              "    sys.exit(1)",
+              "",
+              "info = mt5.account_info()",
+              "term = mt5.terminal_info()",
+              "print(f'=== MT5 CONNECTION SUCCESS ===')",
+              "print(f'Account : {info.login}')",
+              "print(f'Balance : {info.balance} {info.currency}')",
+              "print(f'Server  : {info.server}')",
+              "print(f'trade_allowed (terminal): {term.trade_allowed}')",
+              "print(f'trade_allowed (account) : {info.trade_allowed}')",
+              "",
+              "if not term.trade_allowed:",
+              "    print('WARNING: AutoTrading not detected. Proceeding anyway — bot will warn if orders fail.')",
+              "",
+              "if not info.trade_allowed:",
+              "    print('ERROR: Account trading is disabled by broker!')",
+              "    mt5.shutdown()",
+              "    sys.exit(1)",
+              "",
+              "print('=== ALL CHECKS PASSED ===')",
+              "mt5.shutdown()"
+          ) -join "`r`n"
           $code | Out-File -FilePath "conn_check.py" -Encoding utf8
           python conn_check.py
           Remove-Item "conn_check.py" -ErrorAction SilentlyContinue
