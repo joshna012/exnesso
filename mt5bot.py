@@ -934,11 +934,28 @@ def open_trade(symbol, direction, sl, tp, sl_dist, qtp_score=0):
     sl = round(sl, sym.digits)
     tp = round(tp, sym.digits)
 
-    # Robotic Drawdown Protection Sizing: halving risk based on loss streak
+    # 1. Setup Quality Factor (QTP Score scaling): scale risk between 0.5x and 1.5x of base risk
+    # If qtp_score is not passed (0), keep it neutral (1.0x).
+    if qtp_score > 0:
+        qtp_factor = (qtp_score - 50) / 40.0 if qtp_score > 50 else 0.5
+        qtp_factor = max(0.5, min(1.5, qtp_factor))
+    else:
+        qtp_factor = 1.0
+
+    # 2. Performance Factor (Drawdown Protection: halving risk based on consecutive loss streak)
     streak = state.get("loss_streak", 0)
     risk_multiplier = 1.0 / (2 ** streak)
-    current_risk = RISK_PER_TRADE * risk_multiplier
+
+    # Combined Dynamic Risk Percentage
+    current_risk = RISK_PER_TRADE * qtp_factor * risk_multiplier
+    # Cap risk between 0.1% and 3.0% of account balance for safety
+    current_risk = max(0.001, min(0.03, current_risk))
     
+    if BOT_THOUGHTS:
+        log.info(f"🧠 [BOT BRAIN - RISK ANALYSIS] Setup QTP Score: {qtp_score}/100 (Setup Factor: {qtp_factor:.2f}x) | "
+                 f"Loss Streak: {streak} (Streak Multiplier: {risk_multiplier:.2f}x) -> "
+                 f"Dynamically set Trade Risk to {current_risk * 100:.2f}% of balance (Base: {RISK_PER_TRADE * 100:.2f}%).")
+                 
     volume = lot_size(symbol, sl_dist, current_risk)
 
     res = mt5.order_send({
