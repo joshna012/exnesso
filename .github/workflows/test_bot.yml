@@ -55,7 +55,7 @@ jobs:
               Get-ChildItem -Path "C:\Program Files" -Filter "*MetaTrader*" -Recurse -ErrorAction SilentlyContinue
           }
 
-      - name: Configure MetaTrader 5 (Enable Algo Trading)
+      - name: Create Portable MT5 Instance
         shell: powershell
         run: |
           $paths = @(
@@ -63,18 +63,33 @@ jobs:
               "C:\Program Files\Exness MetaTrader 5",
               "C:\Program Files\MetaTrader 5"
           )
+          $installedPath = $null
           foreach ($path in $paths) {
               if (Test-Path $path) {
-                  $configPath = Join-Path $path "config"
-                  if (-not (Test-Path $configPath)) {
-                      New-Item -ItemType Directory -Path $configPath -Force
-                  }
-                  $iniPath = Join-Path $configPath "common.ini"
-                  $iniContent = "[Experts]`r`nAllowLiveTrading=1`r`nAllowDllImport=1"
-                  Set-Content -Path $iniPath -Value $iniContent -Encoding Unicode
-                  Write-Host "Configured MT5 at $iniPath"
+                  $installedPath = $path
+                  break
               }
           }
+          if ($installedPath) {
+              Write-Host "Found MT5 installation at $installedPath. Copying to C:\MT5..."
+              Copy-Item -Path $installedPath -Destination "C:\MT5" -Recurse -Force
+              Write-Host "Copied successfully to C:\MT5."
+          } else {
+              Write-Error "Could not find MT5 installation to copy."
+              exit 1
+          }
+
+      - name: Configure MetaTrader 5 (Enable Algo Trading)
+        shell: powershell
+        run: |
+          $configPath = "C:\MT5\config"
+          if (-not (Test-Path $configPath)) {
+              New-Item -ItemType Directory -Path $configPath -Force
+          }
+          $iniPath = Join-Path $configPath "common.ini"
+          $iniContent = "[Experts]`r`nAllowLiveTrading=1`r`nAllowDllImport=1"
+          Set-Content -Path $iniPath -Value $iniContent -Encoding Unicode
+          Write-Host "Configured MT5 at $iniPath"
 
       - name: Run Connection Test
         shell: powershell
