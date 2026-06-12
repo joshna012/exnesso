@@ -87,8 +87,8 @@ if tick is None:
     sys.exit(1)
 
 price = tick.ask
-sl = price - 5.0
-tp = price + 5.0
+sl = 0.0
+tp = 0.0
 
 request = {
     "action": mt5.TRADE_ACTION_DEAL,
