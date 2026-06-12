@@ -430,13 +430,13 @@ def update_adaptive_qtp():
         new_qtp = min(current + 5, ADAPTIVE_QTP_MAX)
         if new_qtp != current:
             state["adaptive_qtp"] = new_qtp
-            log.info("📉 [ADAPTIVE QTP] Win rate %.0f%% is low. Raised QTP threshold to %d (more selective).", win_rate*100, new_qtp)
+            log.info("📉 [ADAPTIVE QTP] উইন রেট %.0f%% অত্যন্ত কম। QTP থ্রেশহোল্ড বাড়িয়ে %d করা হলো (অধিক সতর্ক)।", win_rate*100, new_qtp)
     elif win_rate > 0.65:
         # Good performance -> lower threshold slightly (more trades)
         new_qtp = max(current - 3, ADAPTIVE_QTP_MIN)
         if new_qtp != current:
             state["adaptive_qtp"] = new_qtp
-            log.info("📈 [ADAPTIVE QTP] Win rate %.0f%% is high. Lowered QTP threshold to %d (more trades).", win_rate*100, new_qtp)
+            log.info("📈 [ADAPTIVE QTP] উইন রেট %.0f%% বেশ ভালো। QTP থ্রেশহোল্ড কমিয়ে %d করা হলো (অধিক ট্রেড)।", win_rate*100, new_qtp)
 
 def get_kelly_risk(base_risk):
     """Calculate position risk % using fractional Kelly criterion."""
@@ -569,7 +569,7 @@ def check_trend_still_valid(rates, direction, ema200_m5, ema50_m15, ema50_h1, ad
         return True
     if adx < CHOP_ADX_LEVEL:
         if BOT_THOUGHTS:
-            log.info("⚠️ [TREND CHECK] ADX %.1f below chop level %d — trend too weak, skipping.", adx, CHOP_ADX_LEVEL)
+            log.info("⚠️ [TREND CHECK] ADX %.1f চপ লেভেল %d এর নিচে — ট্রেন্ড অত্যন্ত দুর্বল, এন্ট্রি বাদ দেওয়া হচ্ছে।", adx, CHOP_ADX_LEVEL)
         return False
     mid = rates[-2]['close']
     if direction == "BUY":
@@ -599,12 +599,12 @@ def compute_smart_sl_tp(rates, rates_h1, direction, entry_price, atr, adx):
     # 3. Hard RR gate — skip trade if we can't get 6:1
     if tp is None or rr < MIN_RR_RATIO:
         if BOT_THOUGHTS:
-            log.info("⛔ [RR GATE] Skipping %s trade — best achievable RR is %.1f:1 (need %.1f:1).",
+            log.info("⛔ [RR GATE] %s ট্রেড বাদ দেওয়া হচ্ছে — সম্ভাব্য সর্বোচ্চ RR হচ্ছে %.1f:1 (কমপক্ষে %.1f:1 প্রয়োজন)।",
                      direction, rr, MIN_RR_RATIO)
         return None
 
     if BOT_THOUGHTS:
-        log.info("✅ [RR GATE] %s trade approved — Structural SL: %.5f | Structural TP: %.5f | RR: %.1f:1",
+        log.info("✅ [RR GATE] %s ট্রেড অনুমোদিত — স্ট্রাকচারাল SL: %.5f | স্ট্রাকচারাল TP: %.5f | RR: %.1f:1",
                  direction, sl, tp, rr)
 
     return sl, tp, sl_dist, rr
@@ -719,9 +719,9 @@ def update_news():
                         continue
             news_events = events
             last_news_fetch = now
-            log.info("News calendar updated. Loaded %d high-impact events.", len(news_events))
+            log.info("নিউজ ক্যালেন্ডার আপডেট করা হয়েছে। %dটি হাই-ইম্প্যাক্ট নিউজ লোড হয়েছে।", len(news_events))
     except Exception as e:
-        log.warning("Failed to fetch news calendar: %s", e)
+        log.warning("নিউজ ক্যালেন্ডার আপডেট করতে ব্যর্থ হয়েছে: %s", e)
         last_news_fetch = now - 3300  # retry in 5 minutes
 
 def is_news_paused(symbol):
@@ -1094,7 +1094,7 @@ def get_orb_ranges(symbol):
             if tokyo_rates is not None and len(tokyo_rates) >= ORB_PERIOD:
                 symbol_ranges["tokyo_high"] = np.max(tokyo_rates['high'])
                 symbol_ranges["tokyo_low"] = np.min(tokyo_rates['low'])
-                log.info("Symbol %s Tokyo ORB Range established: %.5f - %.5f", symbol, symbol_ranges["tokyo_low"], symbol_ranges["tokyo_high"])
+                log.info("পেয়ার %s টোকিও ORB সীমা তৈরি হয়েছে: %.5f - %.5f", symbol, symbol_ranges["tokyo_low"], symbol_ranges["tokyo_high"])
     
     # London ORB (07:00 - 07:15 UTC)
     if "london_high" not in symbol_ranges:
@@ -1104,7 +1104,7 @@ def get_orb_ranges(symbol):
             if london_rates is not None and len(london_rates) >= ORB_PERIOD:
                 symbol_ranges["london_high"] = np.max(london_rates['high'])
                 symbol_ranges["london_low"] = np.min(london_rates['low'])
-                log.info("Symbol %s London ORB Range established: %.5f - %.5f", symbol, symbol_ranges["london_low"], symbol_ranges["london_high"])
+                log.info("পেয়ার %s লন্ডন ORB সীমা তৈরি হয়েছে: %.5f - %.5f", symbol, symbol_ranges["london_low"], symbol_ranges["london_high"])
             
     # NY ORB (13:00 - 13:15 UTC)
     if "ny_high" not in symbol_ranges:
@@ -1114,7 +1114,7 @@ def get_orb_ranges(symbol):
             if ny_rates is not None and len(ny_rates) >= ORB_PERIOD:
                 symbol_ranges["ny_high"] = np.max(ny_rates['high'])
                 symbol_ranges["ny_low"] = np.min(ny_rates['low'])
-                log.info("Symbol %s NY ORB Range established: %.5f - %.5f", symbol, symbol_ranges["ny_low"], symbol_ranges["ny_high"])
+                log.info("পেয়ার %s নিউইয়র্ক ORB সীমা তৈরি হয়েছে: %.5f - %.5f", symbol, symbol_ranges["ny_low"], symbol_ranges["ny_high"])
             
     return symbol_ranges
 
@@ -1133,11 +1133,11 @@ def beautify_message_for_messenger(msg):
             balance_str = subparts[1].replace("Balance:", "").replace("USD", "").strip()
             
             return (
-                "📊 [TRADE CLOSED REPORT] 📊\n"
+                "📊 [ট্রেড ক্লোজ রিপোর্ট] 📊\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Asset: {symbol}\n"
-                f"Outcome: {emoji} {profit_str} USD\n"
-                f"New Balance: {balance_str} USD\n"
+                f"ট্রেডিং পেয়ার: {symbol}\n"
+                f"ফলাফল: {emoji} {profit_str} USD\n"
+                f"নতুন ব্যালেন্স: {balance_str} USD\n"
                 "━━━━━━━━━━━━━━━━━━━━━"
             )
             
@@ -1161,14 +1161,15 @@ def beautify_message_for_messenger(msg):
                     if "QTP:" in sp:
                         qtp_val = sp.split("QTP:")[1].strip()
             
+            direction_bn = "BUY (ক্রয়)" if direction == "BUY" else "SELL (বিক্রয়)"
             return (
-                "🚀 [TRADE EXECUTED] 🚀\n"
+                "🚀 [ট্রেড এন্ট্রি সফল] 🚀\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Action: {direction} {symbol}\n"
-                f"Volume: {volume} Lots\n"
-                f"Price: {price}\n"
-                f"Risk: {risk_val}\n"
-                f"Setup Quality: {qtp_val}/100\n"
+                f"অ্যাকশন: {direction_bn} {symbol}\n"
+                f"লট সাইজ: {volume} Lots\n"
+                f"ট্রেড প্রাইস: {price}\n"
+                f"রিস্ক পার্সেন্ট: {risk_val}\n"
+                f"সেটআপ কোয়ালিটি: {qtp_val}/100\n"
                 "━━━━━━━━━━━━━━━━━━━━━"
             )
             
@@ -1177,11 +1178,11 @@ def beautify_message_for_messenger(msg):
             balance = msg.split("Balance")[1].split("USD")[0].strip()
             symbols = msg.split("Hunting:")[1].strip()
             return (
-                "🤖 [BOT SYSTEM ONLINE] 🤖\n"
+                "🤖 [বট সিস্টেম অনলাইন] 🤖\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
-                "Status: Operational\n"
-                f"Initial Balance: {balance} USD\n"
-                f"Assets: {symbols}\n"
+                "স্ট্যাটাস: সক্রিয় (Operational)\n"
+                f"প্রারম্ভিক ব্যালেন্স: {balance} USD\n"
+                f"ট্রেডিং পেয়ার: {symbols}\n"
                 "━━━━━━━━━━━━━━━━━━━━━"
             )
             
@@ -1190,11 +1191,11 @@ def beautify_message_for_messenger(msg):
             pnl = msg.split("Locked in")[1].split("profit")[0].strip()
             balance = msg.split("Balance:")[1].strip()
             return (
-                "🎯 [DAILY GOAL COMPLETED] 🎯\n"
+                "🎯 [দৈনিক প্রফিট লক্ষ্য অর্জিত] 🎯\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Secured Profit: {pnl}\n"
-                f"Final Balance: {balance} USD\n"
-                "Status: Finished for the day.\n"
+                f"অর্জিত প্রফিট: {pnl}\n"
+                f"নতুন ব্যালেন্স: {balance} USD\n"
+                "স্ট্যাটাস: আজকের ট্রেডিং শেষ।\n"
                 "━━━━━━━━━━━━━━━━━━━━━"
             )
             
@@ -1206,30 +1207,30 @@ def beautify_message_for_messenger(msg):
             if "Pausing" in msg:
                 minutes = msg.split("Pausing")[1].split("min")[0].strip()
             return (
-                "⚠️ [CIRCUIT BREAKER TRIGGERED] ⚠️\n"
+                "⚠️ [সার্কিট ব্রেকার সক্রিয়] ⚠️\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
-                f"Streak: {streak} Consecutive Losses\n"
-                f"Action: Cooldown Initiated ({minutes} min)\n"
+                f"ধারাবাহিক লস: {streak} বার লস\n"
+                f"অ্যাকশন: বিরতি শুরু ({minutes} মিনিট)\n"
                 "━━━━━━━━━━━━━━━━━━━━━"
             )
             
         # Daily loss limit hit
         elif "Daily loss limit hit" in msg:
             return (
-                "🛑 [DRAWDOWN BREACH ALERT] 🛑\n"
+                "🛑 [সর্বোচ্চ দৈনিক লস এলার্ট] 🛑\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
-                "Reason: Daily Loss Limit Reached\n"
-                "Action: Closed All Open Positions\n"
-                "Status: Paused until tomorrow.\n"
+                "কারণ: দৈনিক লস লিমিট অতিক্রম করেছে\n"
+                "অ্যাকশন: সব রানিং ট্রেড ক্লোজ করা হয়েছে\n"
+                "স্ট্যাটাস: আগামীকাল পর্যন্ত ট্রেডিং বন্ধ।\n"
                 "━━━━━━━━━━━━━━━━━━━━━"
             )
             
         # Bot shutdown
         elif "Bot stopped" in msg:
             return (
-                "🛑 [BOT SYSTEM OFFLINE] 🛑\n"
+                "🛑 [বট সিস্টেম অফলাইন] 🛑\n"
                 "━━━━━━━━━━━━━━━━━━━━━\n"
-                "Status: Stopped safely.\n"
+                "স্ট্যাটাস: নিরাপদে বন্ধ করা হয়েছে।\n"
                 "━━━━━━━━━━━━━━━━━━━━━"
             )
             
@@ -1245,7 +1246,7 @@ def notify(msg):
                    + urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": msg}))
             urllib.request.urlopen(url, timeout=5)
         except Exception as e:
-            log.warning("Telegram failed: %s", e)
+            log.warning("টেলিগ্রাম নোটিফিকেশন পাঠাতে ব্যর্থ হয়েছে: %s", e)
 
     # Send to Facebook Messenger via CallMeBot if key is set
     if FB_API_KEY:
@@ -1255,7 +1256,7 @@ def notify(msg):
                    + urllib.parse.urlencode({"apikey": FB_API_KEY, "text": fb_msg}))
             urllib.request.urlopen(url, timeout=5)
         except Exception as e:
-            log.warning("Facebook notification failed: %s", e)
+            log.warning("ফেসবুক নোটিফিকেশন পাঠাতে ব্যর্থ হয়েছে: %s", e)
 
     # v7.0: Discord Webhook backup notification
     if DISCORD_WEBHOOK:
@@ -1267,7 +1268,7 @@ def notify(msg):
                 headers={"Content-Type": "application/json"}, method="POST")
             urllib.request.urlopen(req, timeout=5)
         except Exception as e:
-            log.warning("Discord notification failed: %s", e)
+            log.warning("ডিসকর্ড নোটিফিকেশন পাঠাতে ব্যর্থ হয়েছে: %s", e)
 
 # ---------------- JOURNAL ----------------
 def init_journal():
@@ -1299,10 +1300,9 @@ def journal_closed_deals():
             if state["loss_streak"] >= LOSS_STREAK_MAX:
                 state["pause_until"] = time.time() + LOSS_PAUSE_SEC
                 state["loss_streak"] = 0
-                log.warning("⚠️ %d losses in a row - pausing %d min (choppy market)",
+                log.warning("⚠️ পরপর %d বার লস হয়েছে - %d মিনিট বিরতি নেওয়া হলো (চপি মার্কেট)",
                             LOSS_STREAK_MAX, LOSS_PAUSE_SEC // 60)
-                notify(f"⚠️ {LOSS_STREAK_MAX} losses in a row. "
-                       f"Pausing {LOSS_PAUSE_SEC // 60} min.")
+                notify(f"⚠️ {LOSS_STREAK_MAX}টি লস পরপর হয়েছে। মার্কেট চপি হওয়ার কারণে {LOSS_PAUSE_SEC // 60} মিনিট বিরতি নেওয়া হলো।")
         else:
             state["loss_streak"] = 0
             state["last_trade_loss"][d.symbol] = False
@@ -1322,16 +1322,17 @@ def journal_closed_deals():
         state["last_exit"][d.symbol] = time.time()
 
         direction = "SELL" if d.type == mt5.DEAL_TYPE_SELL else "BUY"
+        direction_bn = "বিক্রয় (SELL)" if direction == "SELL" else "ক্রয় (BUY)"
         with open(JOURNAL_FILE, "a", newline="") as f:
             csv.writer(f).writerow(
                 [datetime.fromtimestamp(d.time, timezone.utc).isoformat(),
                  d.symbol, direction, d.volume, "", d.price,
                  round(d.profit, 2), d.comment, acc.balance])
         emoji = "✅" if d.profit >= 0 else "❌"
-        log.info("%s CLOSED %s %.2f lots profit=%.2f (%s) | balance=%.2f",
-                 emoji, d.symbol, d.volume, d.profit, d.comment, acc.balance)
-        notify(f"{emoji} {d.symbol} closed: {d.profit:+.2f} USD "
-               f"| Balance: {acc.balance:.2f}")
+        reason_bn = "স্টপ লস (SL)" if "sl" in d.comment.lower() else ("টেক প্রফিট (TP)" if "tp" in d.comment.lower() else ("টাইম স্টপ (Time Exit)" if "time" in d.comment.lower() else d.comment))
+        log.info("%s ক্লোজ করা হয়েছে %s (%s): %.2f লট, প্রফিট=%.2f (%s) | ব্যালেন্স=%.2f",
+                 emoji, d.symbol, direction_bn, d.volume, d.profit, reason_bn, acc.balance)
+        notify(f"{emoji} {d.symbol} ক্লোজ করা হয়েছে ({direction_bn}): {d.profit:+.2f} USD | ব্যালেন্স: {acc.balance:.2f} USD")
 
 # ---------------- CONNECTION ----------------
 def connect():
@@ -1350,11 +1351,11 @@ def connect():
         ]
         for path in fallback_paths:
             if path:
-                log.info("Retrying MT5 init with path: %s", path)
+                log.info("নির্ধারিত পাথে পুনরায় MT5 চালুর চেষ্টা করা হচ্ছে: %s", path)
                 init_ok = mt5.initialize(path=path, login=LOGIN, server=SERVER,
                                          password=PASSWORD, portable=PORTABLE)
             else:
-                log.info("Retrying MT5 init with default path...")
+                log.info("ডিফল্ট পাথে পুনরায় MT5 চালুর চেষ্টা করা হচ্ছে...")
                 init_ok = mt5.initialize(login=LOGIN, server=SERVER,
                                          password=PASSWORD, portable=PORTABLE)
             if init_ok:
@@ -1363,17 +1364,17 @@ def connect():
             raise RuntimeError(f"MT5 init failed: {mt5.last_error()}")
 
     info = mt5.account_info()
-    log.info("Connected: %s | Balance: %.2f %s", info.login, info.balance, info.currency)
+    log.info("সংযুক্ত হয়েছে: %s | ব্যালেন্স: %.2f %s", info.login, info.balance, info.currency)
 
     # Symbol setup
     for s in SYMBOLS[:]:
         if not mt5.symbol_select(s, True):
-            log.warning("Symbol %s not available, removing", s)
+            log.warning("সিম্বল %s পাওয়া যায়নি, বাদ দেওয়া হচ্ছে", s)
             SYMBOLS.remove(s)
 
     # DXYm correlation (optional — warn only)
     if not mt5.symbol_select("DXYm", True):
-        log.warning("DXYm not available — DXY correlation filter disabled.")
+        log.warning("DXYm সিম্বলটি পাওয়া যায়নি — ডলার ইনডেক্স কো-রিলেশন ফিল্টার নিষ্ক্রিয় করা হলো।")
 
     # AutoTrading check — retry up to 3 times with delay (terminal may need a moment)
     trade_allowed = False
@@ -1381,32 +1382,32 @@ def connect():
         term = mt5.terminal_info()
         if term.trade_allowed:
             trade_allowed = True
-            log.info("✅ AutoTrading is ENABLED in terminal.")
+            log.info("✅ টার্মিনালে AutoTrading সক্রিয় (ENABLED) আছে।")
             break
-        log.warning("⚠️ AutoTrading not yet enabled (attempt %d/3). Waiting 5s...", attempt + 1)
+        log.warning("⚠️ AutoTrading এখনো সক্রিয় হয়নি (চেষ্টা %d/3)। ৫ সেকেন্ড অপেক্ষা করা হচ্ছে...", attempt + 1)
         import time as _time
         _time.sleep(5)
 
     if not trade_allowed:
         # Last resort: try re-initializing once more with explicit path
         mt5.shutdown()
-        log.warning("AutoTrading still disabled — re-initializing MT5 with explicit path...")
+        log.warning("AutoTrading এখনো নিষ্ক্রিয় — নির্ধারিত পাথে MT5 পুনরায় চালু করা হচ্ছে...")
         mt5.initialize(path="C:\\MT5\\terminal64.exe", login=LOGIN,
                        server=SERVER, password=PASSWORD, portable=PORTABLE)
         term = mt5.terminal_info()
         if term and term.trade_allowed:
-            log.info("✅ AutoTrading ENABLED after re-init.")
+            log.info("✅ পুনরায় চালুর পর AutoTrading সক্রিয় (ENABLED) হয়েছে।")
         else:
             log.warning(
-                "⚠️ AutoTrading still DISABLED. Bot will run but orders may be rejected. "
-                "Enable AutoTrading manually in MT5 terminal if running locally."
+                "⚠️ AutoTrading এখনো নিষ্ক্রিয় আছে। বট চালু থাকবে কিন্তু ট্রেড রিজেক্ট হতে পারে। "
+                "লোকাল কম্পিউটারে রান করলে MT5 এ ম্যানুয়ালি AutoTrading সক্রিয় করুন।"
             )
 
     # Account trading permission (broker-level — this is fatal)
     if not info.trade_allowed:
         raise RuntimeError("Account trading is DISABLED by broker. Check account settings.")
 
-    notify(f"🤖 Bot online. Balance {info.balance:.2f} USD. Hunting: {', '.join(SYMBOLS)}")
+    notify(f"🤖 বট অনলাইন হয়েছে। ব্যালেন্স {info.balance:.2f} USD। পেয়ার স্ক্যান করা হচ্ছে: {', '.join(SYMBOLS)}")
 
 # ---------------- GUARDS ----------------
 def close_all_positions(reason=""):
@@ -1433,11 +1434,12 @@ def close_all_positions(reason=""):
                     "type_filling": mt5.ORDER_FILLING_IOC
                 })
                 if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    log.info("🚨 EMERGENCY CLOSE %s #%d due to: %s", pos.symbol, pos.ticket, reason)
+                    reason_bn = "ট্রেইলিং প্রফিট লক" if reason == "trail_lock" else ("দৈনিক লস সীমা" if reason == "loss_limit" else ("নিউইয়র্ক সেশন ক্লোজ" if reason == "ny_session_close" else reason))
+                    log.info("🚨 জরুরি ভিত্তিতে পজিশন ক্লোজ করা হয়েছে: %s #%d, কারণ: %s", pos.symbol, pos.ticket, reason_bn)
                     state["last_exit"][pos.symbol] = time.time()
                     closed_any = True
                 else:
-                    log.warning("⚠️ Emergency close failed for %s #%d: %s", 
+                    log.warning("⚠️ জরুরি ক্লোজ ব্যর্থ হয়েছে %s #%d এর জন্য: %s", 
                                 pos.symbol, pos.ticket, res.comment if res is not None else "None")
     return closed_any
 
@@ -1455,7 +1457,7 @@ def daily_guard():
         state["last_trade_loss"] = {s: False for s in SYMBOLS}
         state["last_exit"] = {s: 0.0 for s in SYMBOLS}
         known_deals.clear()
-        log.info("New trading day. Start balance: %.2f", acc.balance)
+        log.info("নতুন ট্রেডিং দিন শুরু। প্রারম্ভিক ব্যালেন্স: %.2f", acc.balance)
     if state["halted"]:
         return False
 
@@ -1477,8 +1479,8 @@ def daily_guard():
         if not state.get("profit_locked", False):
             state["profit_locked"] = True
             state["peak_equity_profit"] = max_pnl
-            log.info("🚀 DAILY PROFIT GOAL reached! Dynamic Trailing Profit mode activated to ride trends.")
-            notify("🚀 Daily profit goal reached! Trailing Profit Mode active: riding trend while protecting gains.")
+            log.info("🚀 দৈনিক প্রফিট টার্গেট পূরণ হয়েছে! বড় ট্রেন্ড ধরার জন্য ডাইনামিক ট্রেইলিং প্রফিট মোড সক্রিয় করা হলো।")
+            notify("🚀 দৈনিক প্রফিট টার্গেট অর্জিত হয়েছে! ট্রেইলিং প্রফিট মোড সক্রিয়: লাভ সুরক্ষিত রেখে ট্রেন্ড রাইড করা হচ্ছে।")
 
     if state.get("profit_locked", False):
         state["peak_equity_profit"] = max(state.get("peak_equity_profit", 0.0), max_pnl)
@@ -1515,8 +1517,8 @@ def daily_guard():
             
             # Reset trailing state with new baseline balance instead of halting
             state.update(start_balance=new_balance, profit_locked=False, peak_equity_profit=0.0)
-            log.info("🎯 Trailing Daily Profit hit! Locked in %.2f%% profit. Resetting baseline balance to %.2f to continue trading.", realized_pnl * 100, new_balance)
-            notify(f"🎯 Trailing Daily Profit hit! Locked in {realized_pnl*100:+.2f}% profit. Baseline reset to {new_balance:.2f}. Continuing trading.")
+            log.info("🎯 দৈনিক ট্রেইলিং প্রফিট হিট হয়েছে! %.2f%% প্রফিট লক করা হলো। ট্রেডিং অব্যাহত রাখতে বেসলাইন ব্যালেন্স %.2f এ রিসেট করা হলো।", realized_pnl * 100, new_balance)
+            notify(f"🎯 দৈনিক ট্রেইলিং প্রফিট হিট হয়েছে! {realized_pnl*100:+.2f}% প্রফিট সুরক্ষিত ও লক করা হলো। বেসলাইন পুনরায় {new_balance:.2f} এ সেট করা হলো। ট্রেডিং অব্যাহত রয়েছে।")
 
     hour = datetime.now(timezone.utc).hour
     if not (SESSION_START_UTC <= hour < SESSION_END_UTC):
@@ -1574,10 +1576,11 @@ def open_trade(symbol, direction, sl, tp, sl_dist, qtp_score=0):
     current_risk = max(0.001, min(0.03, current_risk))
     
     if BOT_THOUGHTS:
-        log.info(f"🧠 [BOT BRAIN - RISK ANALYSIS] Setup QTP Score: {qtp_score}/100 (Setup Factor: {qtp_factor:.2f}x) | "
-                 f"Loss Streak: {streak} (Streak Multiplier: {risk_multiplier:.2f}x) | "
-                 f"Session: {session_name} (Session Mult: {session_mult:.2f}x) | Kelly Base: {base_risk*100:.2f}% -> "
-                 f"Dynamically set Trade Risk to {current_risk * 100:.2f}% of balance.")
+        session_name_bn = "লন্ডন/নিউইয়র্ক ওভারল্যাপ" if session_name == "overlap" else ("লন্ডন" if session_name == "london" else ("নিউইয়র্ক" if session_name == "ny" else ("টোকিও" if session_name == "tokyo" else "অফ-আওয়ার")))
+        log.info(f"🧠 [বট ব্রেন - রিস্ক অ্যানালাইসিস] সেটআপ QTP স্কোর: {qtp_score}/100 (সেটআপ ফ্যাক্টর: {qtp_factor:.2f}x) | "
+                 f"পরপর লস: {streak} (লস মাল্টিপ্লায়ার: {risk_multiplier:.2f}x) | "
+                 f"ট্রেডিং সেশন: {session_name_bn} (সেশন মাল্টিপ্লায়ার: {session_mult:.2f}x) | কেলি রিস্ক বেস: {base_risk*100:.2f}% -> "
+                 f"ডাইনামিকভাবে এই ট্রেডের রিস্ক ব্যালেন্সের {current_risk * 100:.2f}% নির্ধারণ করা হলো।")
                  
     volume = lot_size(symbol, sl_dist, current_risk)
 
@@ -1589,22 +1592,23 @@ def open_trade(symbol, direction, sl, tp, sl_dist, qtp_score=0):
         "type_filling": mt5.ORDER_FILLING_IOC})
 
     if res is None:
-        log.error("Order failed %s: order_send returned None", symbol)
+        log.error("অর্ডার ব্যর্থ হয়েছে %s: order_send None রিটার্ন করেছে", symbol)
         return
 
     if res.retcode == mt5.TRADE_RETCODE_DONE:
         state["trades_today"] += 1
         state["last_entry"][symbol] = time.time()
         open_times[res.order] = time.time()
-        log.info(">>> %s %s %.2f lots @ %.5f TP=%.5f SL=%.5f [Risk Size: %.2f%%, QTP Score: %d]",
-                 direction, symbol, res.volume, price, tp, sl, current_risk * 100, qtp_score)
+        direction_bn = "ক্রয় (BUY)" if direction == "BUY" else "বিক্রয় (SELL)"
+        log.info(">>> %s %s %.2f লট @ %.5f TP=%.5f SL=%.5f [রিস্ক: %.2f%%, QTP স্কোর: %d]",
+                 direction_bn, symbol, res.volume, price, tp, sl, current_risk * 100, qtp_score)
         if BOT_THOUGHTS:
-            log.info(f"🎯 [TRADE EXECUTED] Successfully placed a {direction} trade on {symbol} with size {res.volume:.2f} lots! "
-                     f"Our QTP Setup Probability was high at {qtp_score}/100. "
-                     f"Initial Stop-Loss is set at {sl:.5f} and Take-Profit at {tp:.5f} (Risking {current_risk * 100:.2f}% of our balance).")
-        notify(f"📈 {direction} {symbol} {res.volume} lots @ {price:.5f} [Risk: {current_risk * 100:.2f}%, QTP: {qtp_score}]")
+            log.info(f"🎯 [ট্রেড সম্পন্ন] সফলভাবে একটি {direction_bn} ট্রেড ওপেন করা হয়েছে {symbol} এ যার সাইজ {res.volume:.2f} লট! "
+                     f"আমাদের QTP সেটআপ প্রবাবিলিটি ছিল অনেক বেশি ({qtp_score}/100)। "
+                     f"প্রাথমিক স্টপ-লস সেট করা হয়েছে {sl:.5f} এ এবং টেক-প্রফিট {tp:.5f} এ (রিস্ক: {current_risk * 100:.2f}% ব্যালেন্স)।")
+        notify(f"📈 {direction_bn} {symbol} {res.volume} লট @ {price:.5f} [রিস্ক: {current_risk * 100:.2f}%, QTP: {qtp_score}]")
     else:
-        log.error("Order failed %s: %s %s", symbol, res.retcode, getattr(res, 'comment', ''))
+        log.error("অর্ডার ব্যর্থ হয়েছে %s: %s %s", symbol, res.retcode, getattr(res, 'comment', ''))
 
 def partial_close_position(pos, sym_info, close_ratio=0.5):
     tick = mt5.symbol_info_tick(pos.symbol)
@@ -1644,11 +1648,11 @@ def partial_close_position(pos, sym_info, close_ratio=0.5):
     })
     
     if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
-        log.info("✂️ PARTIAL CLOSE %s #%d closed %.2f lots at %.5f",
+        log.info("✂️ আংশিক ক্লোজ (PARTIAL CLOSE) %s #%d: %.2f লট ক্লোজ করা হয়েছে %.5f এ",
                  pos.symbol, pos.ticket, close_vol, price)
         return True
     else:
-        log.warning("⚠️ Partial close failed for %s #%d: %s",
+        log.warning("⚠️ আংশিক ক্লোজ ব্যর্থ হয়েছে %s #%d এর জন্য: %s",
                     pos.symbol, pos.ticket, res.comment if res is not None else "None")
         return False
 
@@ -1682,7 +1686,7 @@ def manage_open():
                                   if pos.volume > 0 else 0)
                     if profit_pts > SMART_TIME_EXIT_BUFFER * atr_val and pos.profit > 0:
                         if BOT_THOUGHTS:
-                            log.info("⏱ [SMART TIME-EXIT] Trade #%d is +%.2f profit — skipping time-stop, letting it run.",
+                            log.info("⏱ [SMART TIME-EXIT] ট্রেড #%d বর্তমানে +%.2f প্রফিটে আছে — টাইম-স্টপ বাদ দিয়ে চলতে দেওয়া হচ্ছে।",
                                      pos.ticket, pos.profit)
                         # Don't close, but do tighten SL to protect profit
                         # (trailing stop logic below will handle it)
@@ -1702,7 +1706,7 @@ def manage_open():
                                 "type_filling": mt5.ORDER_FILLING_IOC})
                             if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
                                 state["last_exit"][pos.symbol] = time.time()
-                            log.info("⏱ [TIME-STOP] %s #%d profit=%.2f (flat/loss — closed)",
+                            log.info("⏱ [TIME-STOP] %s #%d প্রফিট=%.2f (লোকসান/সমান প্রাইস — ক্লোজ করা হলো)",
                                      pos.symbol, pos.ticket, pos.profit)
                         open_times.pop(pos.ticket, None)
                         state["partial_closed_tickets"].pop(pos.ticket, None)
@@ -1722,7 +1726,7 @@ def manage_open():
                         "type_filling": mt5.ORDER_FILLING_IOC})
                     if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
                         state["last_exit"][pos.symbol] = time.time()
-                    log.info("⏱ Time-stop %s #%d profit=%.2f", pos.symbol, pos.ticket, pos.profit)
+                    log.info("⏱ টাইম-স্টপ %s #%d প্রফিট=%.2f", pos.symbol, pos.ticket, pos.profit)
                 open_times.pop(pos.ticket, None)
                 state["partial_closed_tickets"].pop(pos.ticket, None)
                 continue
@@ -1775,10 +1779,10 @@ def manage_open():
                         "position": pos.ticket, "sl": target_sl, "tp": current_tp
                     })
                     if res_be is not None and res_be.retcode == mt5.TRADE_RETCODE_DONE:
-                        log.info("🛡️ Secured Scale-out Step 1 (SL to BE) for %s #%d at %.5f", symbol, pos.ticket, target_sl)
+                        log.info("🛡️ স্কেল-আউট স্টেপ ১ সফল (SL ব্রেক-ইভেনে নেওয়া হলো) %s #%d এর জন্য %.5f এ", symbol, pos.ticket, target_sl)
                         if BOT_THOUGHTS:
-                            log.info(f"✂️ [SCALE-OUT STEP 1] Trade #{pos.ticket} hit +1.0x ATR target! Closed 30% of size "
-                                     f"and moved SL to Breakeven (+0.1x ATR) at {target_sl:.5f}. This trade is now 100% risk-free!")
+                            log.info(f"✂️ [SCALE-OUT STEP 1] ট্রেড #{pos.ticket} +1.0x ATR লক্ষ্যমাত্রা ছুঁয়েছে! ৩০% সাইজ ক্লোজ করা হয়েছে "
+                                     f"এবং SL ব্রেক-ইভেনে (+0.1x ATR) {target_sl:.5f} এ সরিয়ে নেওয়া হয়েছে। এই ট্রেডটি এখন ১০০% রিস্ক-ফ্রি!")
                     current_sl = target_sl
 
         elif step == 1:
@@ -1803,10 +1807,10 @@ def manage_open():
                         "position": pos.ticket, "sl": target_sl, "tp": current_tp
                     })
                     if res_be is not None and res_be.retcode == mt5.TRADE_RETCODE_DONE:
-                        log.info("🛡️ Secured Scale-out Step 2 (SL to Lock 1x ATR) for %s #%d at %.5f", symbol, pos.ticket, target_sl)
+                        log.info("🛡️ স্কেল-আউট স্টেপ ২ সফল (১x ATR প্রফিট লক করা হলো) %s #%d এর জন্য %.5f এ", symbol, pos.ticket, target_sl)
                         if BOT_THOUGHTS:
-                            log.info(f"✂️ [SCALE-OUT STEP 2] Trade #{pos.ticket} hit +2.0x ATR target! Closed another 30% of size "
-                                     f"and moved SL to lock in +1.0x ATR profit at {target_sl:.5f}.")
+                            log.info(f"✂️ [SCALE-OUT STEP 2] ট্রেড #{pos.ticket} +2.0x ATR লক্ষ্যমাত্রা ছুঁয়েছে! আরও ৩০% সাইজ ক্লোজ করা হয়েছে "
+                                     f"এবং SL সরিয়ে +1.0x ATR প্রফিট {target_sl:.5f} এ লক করা হয়েছে।")
                     current_sl = target_sl
 
         # 3. Dynamic Trailing Stop using Market Structure Swing Points (Only after Step 2)
@@ -1863,13 +1867,12 @@ def manage_open():
                 "tp": current_tp
             })
             if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
-                log.info("🛡️ Updated SL for %s #%d to %.5f (ATR trail)",
+                log.info("🛡️ %s #%d এর স্টপ লস (SL) ট্রেইল করে %.5f এ আপডেট করা হয়েছে (ATR trail)",
                          symbol, pos.ticket, new_sl)
                 if BOT_THOUGHTS:
-                    log.info(f"🛡️ [TRAILING STOP UPDATED] Moved Stop-Loss for #{pos.ticket} behind recent market structure "
-                             f"swing point to {new_sl:.5f} to secure accumulated run gains.")
+                    log.info(f"🛡️ [TRAILING STOP UPDATED] ট্রেড #{pos.ticket} এর স্টপ-লস সাম্প্রতিক মার্কেট স্ট্রাকচার সুইং পয়েন্টের পেছনে {new_sl:.5f} এ সরিয়ে নেওয়া হয়েছে (অর্জিত প্রফিট সুরক্ষিত করতে)।")
             else:
-                log.warning("⚠️ Failed to update SL for %s #%d: %s",
+                log.warning("⚠️ %s #%d এর স্টপ লস (SL) আপডেট করতে ব্যর্থ হয়েছে: %s",
                             symbol, pos.ticket, res.comment if res is not None else "None")
                             
     # Clean up stale tickets from partial_closed_tickets dict
@@ -1888,8 +1891,8 @@ def run():
     update_news()
     update_indicators()
     
-    log.info("%s Bot live | %s | session %02d:00-%02d:00 UTC | "
-             "stop day at -%.0f%% or +%.0f%%",
+    log.info("%s স্ট্র্যাটেজি মোডে বট লাইভ হয়েছে | পেয়ার: %s | সেশন: %02d:00-%02d:00 UTC | "
+             "দৈনিক স্টপ সীমা: -%.0f%% অথবা +%.0f%%",
              STRATEGY_MODE.capitalize(), ", ".join(SYMBOLS), SESSION_START_UTC, SESSION_END_UTC,
              DAILY_LOSS_LIMIT * 100, DAILY_PROFIT_GOAL * 100)
     n = 0
@@ -1930,11 +1933,11 @@ def run():
                 vol_regime = state.get("volatility_regime", "normal")
                 if vol_regime == "high":
                     if n % 300 == 0:
-                        log.info("⚡ [VOLATILITY GUARD] ATR spike detected (regime=HIGH). Skipping entries for %s.", symbol)
+                        log.info("⚡ [VOLATILITY GUARD] ATR স্পাইক সনাক্ত করা হয়েছে (regime=HIGH)। %s পেয়ারে এন্ট্রি নেওয়া বন্ধ রাখা হচ্ছে।", symbol)
                     continue
                 if vol_regime == "low":
                     if n % 300 == 0:
-                        log.info("💤 [VOLATILITY GUARD] Market is dead (regime=LOW). Skipping entries for %s.", symbol)
+                        log.info("💤 [VOLATILITY GUARD] মার্কেট এখন শান্ত বা মৃত (regime=LOW)। %s পেয়ারে এন্ট্রি নেওয়া বন্ধ রাখা হচ্ছে।", symbol)
                     continue
 
                 # v7.0: NY Session Close — force-close all trades near end of NY session
@@ -1942,9 +1945,9 @@ def run():
                 if NY_CLOSE_ENABLED and hour_utc >= NY_CLOSE_HOUR_UTC and not state.get("ny_close_done", False):
                     positions_open = [p for p in (mt5.positions_get() or []) if p.magic == MAGIC]
                     if positions_open:
-                        log.info("🌙 [NY CLOSE] NY session ending (%02d:00 UTC). Closing %d position(s) for end-of-day.", NY_CLOSE_HOUR_UTC, len(positions_open))
+                        log.info("🌙 [NY CLOSE] নিউইয়র্ক সেশন শেষ হতে চলেছে (%02d:00 UTC)। দিন শেষে %dটি পজিশন ক্লোজ করা হচ্ছে।", NY_CLOSE_HOUR_UTC, len(positions_open))
                         close_all_positions("ny_session_close")
-                        notify(f"🌙 NY Session Close: {len(positions_open)} position(s) closed for end-of-day.")
+                        notify(f"🌙 নিউইয়র্ক সেশন ক্লোজ: দিন শেষে {len(positions_open)}টি পজিশন ক্লোজ করা হলো।")
                     state["ny_close_done"] = True
 
                 # Get M1 rates to inspect setups
@@ -1972,10 +1975,12 @@ def run():
                             active_mode = "SWEEP"
 
                 # Check if a new M1 candle opened to print analysis
+                print_thought = False
                 last_t = state["last_commentary_time"].get(symbol, 0)
                 current_candle_t = int(rates[-2]['time'])
                 if BOT_THOUGHTS and current_candle_t != last_t:
                     state["last_commentary_time"][symbol] = current_candle_t
+                    print_thought = True
 
                     # 1. Trend Analysis
                     trend_dir = "NEUTRAL"
@@ -2096,13 +2101,81 @@ def run():
                         elif dxy_c < -DXY_VELOCITY_LIMIT:
                             warnings.append(f"⚡ DXY Index dumping rapidly ({dxy_c:.4f}). Blocking SELL setups.")
 
-                    # Print compiled thoughts
-                    warn_str = "\n   -> STATUS GUARDS: " + " | ".join(warnings) if warnings else ""
-                    log.info(f"\n🧠 [BOT BRAIN - {symbol} ANALYSIS]\n"
-                             f"   -> Trend Alignment: {trend_dir} (M5/M15/H1)\n"
-                             f"   -> Market Regime: {regime_desc}\n"
-                             f"   -> Scanning Thoughts: {strat_thoughts}{warn_str}\n"
-                             f"   -> Current Spread: {spread/sym_info.point:.1f} points (Average: {avg_spread/sym_info.point:.1f}) | M1 ATR: {atr:.4f}\n")
+                    # Convert trend direction to easy Bangla
+                    trend_dir_bn = "📈 বুলিশ (ক্রয়মুখী)" if trend_dir == "BULLISH" else ("📉 বিয়ারিশ (বিক্রয়মুখী)" if trend_dir == "BEARISH" else "🟰 নিউট্রাল (পার্শ্বমুখী)")
+
+                    # Build professional trader-to-student commentary in Bangla
+                    commentary_parts = []
+                    if warnings:
+                        # Explain warnings like a teacher explaining why we are not entering
+                        for w in warnings:
+                            if "Trading is halted" in w:
+                                reason = w.split("today:")[1].strip() if "today:" in w else w
+                                reason_bn = reason.replace("trailing profit locked", "দৈনিক প্রফিট সুরক্ষিত ও লক করা")
+                                commentary_parts.append(f"🛑 ওস্তাদ বললেন: 'শোনো ছাত্র, আজকে আমাদের ট্রেডিং বন্ধ রাখতে হবে। কারণ হলো: {reason_bn}। কোনো জোর জবরদস্তি করে ট্রেড নেওয়া যাবে না, ডিসিপ্লিনই আসল!'")
+                            elif "Daily loss limit reached" in w:
+                                commentary_parts.append("🛑 ওস্তাদ বললেন: 'আজকের দৈনিক লসের লিমিট শেষ! মনে রেখো, একজন প্রফেশনাল ট্রেডার তার লস লিমিটকে শ্রদ্ধা করে। আজকে আর কোনো ট্রেড নয়, চার্ট বন্ধ করে দাও আর অন্য কাজ করো।'")
+                            elif "Trailing Profit Mode active" in w:
+                                commentary_parts.append("🚀 ওস্তাদ বললেন: 'আমরা আজকে চমৎকার প্রফিটে আছি এবং আমাদের প্রফিট সুরক্ষিত করা হয়েছে (Trailing mode active)। এখন অতিরিক্ত রিস্ক নেওয়া বোকামি। লাভ ধরে রাখাই স্মার্টনেস!'")
+                            elif "Daily profit goal reached" in w:
+                                commentary_parts.append("🎯 ওস্তাদ বললেন: 'আজকের প্রফিট টার্গেট পূরণ! আলহামদুলিল্লাহ! এখন মার্কেট থেকে বের হয়ে যাও। অতিরিক্ত লোভ করে লাভটা আবার মার্কেটকে ফেরত দেওয়ার কোনো মানে হয় না।'")
+                            elif "Outside session hours" in w:
+                                commentary_parts.append("💤 ওস্তাদ বললেন: 'এখন আমরা অফ-আওয়ারে আছি। গোল্ডে যখন ভলিউম থাকে না (লন্ডন/নিউইয়র্ক সেশনের বাইরে), তখন ফালতু মুভমেন্ট হয়। এই সময়ে ট্রেড নেওয়া মানেই ফাঁদে পা দেওয়া। সেশনের জন্য অপেক্ষা করো!'")
+                            elif "Cooldown pause" in w or "Cooldown active" in w:
+                                commentary_parts.append("⏳ ওস্তাদ বললেন: 'আমরা মাত্র একটা ট্রেড শেষ করেছি। লস হোক বা লাভ, ইমোশন কন্ট্রোল করার জন্য কিছুক্ষণ বিরতি নেওয়া দরকার। তাড়াহুড়ো করে রিভেঞ্জ ট্রেড নিও না। মাথা ঠান্ডা করো!'")
+                            elif "Max open positions" in w:
+                                commentary_parts.append("🚫 ওস্তাদ বললেন: 'আমাদের অলরেডি ৩টি পজিশন ওপেন আছে। এর বেশি রিস্ক বাড়ানো যাবে না। আগে রানিং ট্রেডগুলোর ম্যানেজমেন্টে মনোযোগ দাও, তারপর নতুন সুযোগ খুঁজবো।'")
+                            elif "Already have an active trade" in w:
+                                commentary_parts.append("🚫 ওস্তাদ বললেন: 'এই পেয়ারে অলরেডি আমাদের একটি ট্রেড রানিং আছে। একই পেয়ারে বারবার এন্ট্রি নিয়ে ওভার-ট্রেডিং করা মানে রিস্ক ডাবল করা। শান্ত থাকো!'")
+                            elif "Paused due to news" in w:
+                                news_name = w.split("news:")[1].replace("'", "").strip() if "news:" in w else "গুরুত্বপূর্ণ নিউজ"
+                                commentary_parts.append(f"⚠️ ওস্তাদ বললেন: 'সামনে হাই-ইম্প্যাক্ট নিউজ আছে: \"{news_name}\"। নিউজের সময় মার্কেট জুয়াখেলার মতো আচরণ করে। এই সময়ে যেকোনো অ্যানালাইসিস ফেল হতে পারে, তাই আমরা দূরে থাকবো।'")
+                            elif "Spread widened" in w or "Spread/ATR ratio too high" in w:
+                                commentary_parts.append("⚠️ ওস্তাদ বললেন: 'এখন মার্কেটে স্প্রেড অনেক বেশি! এই স্প্রেডে ট্রেড নিলে আমাদের এন্ট্রি অনেক দূরে হবে এবং লাভ করার চেয়ে ব্রোকারকে চার্জ দিতেই শেষ হবো। স্প্রেড কমতে দাও।'")
+                            elif "Retail buying exhaustion" in w:
+                                commentary_parts.append("⚠️ ওস্তাদ বললেন: 'রিটেইল বা সাধারণ ট্রেডাররা এখন হুজুগে বাই (Buy) করছে, RSI অনেক উপরে। এই চরম মুহূর্তে ইনস্টিটিউশনগুলো বড় সেল ফাঁদ পাতবে। তাই আমাদের বাই ব্লক রাখা হয়েছে।'")
+                            elif "Retail selling exhaustion" in w:
+                                commentary_parts.append("⚠️ ওস্তাদ বললেন: 'সাধারণ ট্রেডাররা প্যানিক করে সেল (Sell) করছে, RSI একদম নিচে। বড় প্লেয়াররা এখন বাই অর্ডার বসাবে। তাই আমাদের সেল ব্লক রাখা হয়েছে, ফাঁদে পা দেওয়া যাবে না!'")
+                            elif "DXY Index pumping" in w:
+                                commentary_parts.append("⚡ ওস্তাদ বললেন: 'ডলার ইনডেক্স (DXY) খুব দ্রুত উপরে উঠছে। গোল্ড সাধারণত ডলারের বিপরীত দিকে যায়। এই পাম্পের সময় গোল্ডে বাই নেওয়া অনেক ঝুঁকিপূর্ণ!'")
+                            elif "DXY Index dumping" in w:
+                                commentary_parts.append("⚡ ওস্তাদ বললেন: 'ডলার ইনডেক্স (DXY) খুব দ্রুত নিচে নামছে। এই অবস্থায় গোল্ডে সেল নেওয়া মানেই নিজের পায়ে কুড়াল মারা!'")
+                    else:
+                        # No warnings, explain what strategy setup we are waiting for
+                        if active_mode == "OB":
+                            commentary_parts.append("🔍 ওস্তাদ বললেন: 'বাজার এখন শান্ত। আমরা একটি প্রফেশনাল অর্ডার ব্লক (SMC OB) খুঁজে পেয়েছি। প্রাইস যখন আমাদের এই ওবি জোনে রিটেস্ট করতে আসবে এবং রিজেকশন কনফার্ম করবে, তখনই আমরা বুলেট এন্ট্রি নেব!'")
+                        elif active_mode == "SMC":
+                            commentary_parts.append("🔍 ওস্তাদ বললেন: 'আমরা একটি ফেয়ার ভ্যালু গ্যাপ (FVG Gap) চিহ্নিত করেছি। প্রাইস যখন এই গ্যাপ বা ইমব্যালেন্স ফিলআপ করতে আসবে, আমরা ট্রেন্ডের ডিরেকশনে প্রফেশনাল এন্ট্রি নেওয়ার জন্য রেডি থাকবো।'")
+                        elif active_mode == "SWEEP":
+                            commentary_parts.append("🔍 ওস্তাদ বললেন: 'আমরা লিকুইডিটি সুইপের অপেক্ষায় আছি। সাধারণ রিটেইলারদের স্টপ-লস হান্ট করার পর যখন বড় ইনস্টিটিউশনগুলো রিভার্সাল সিগন্যাল দেবে, তখন আমরা তাদের সাথে রাইড করবো!'")
+                        elif active_mode == "BREAKOUT":
+                            commentary_parts.append("🔍 ওস্তাদ বললেন: 'মার্কেট এখন রেঞ্জ বাউণ্ড। এই রেঞ্জের মাঝে ট্রেড নেওয়া ভুল। ডনচিয়ান চ্যানেলের ব্রেকআউটের জন্য অপেক্ষা করো, ব্রেকআউট হলে ট্রেন্ডের সাথে রাইড করবো!'")
+                        elif active_mode == "ORB":
+                            commentary_parts.append("🔍 ওস্তাদ বললেন: 'আজকের সেশনের শুরুর রেঞ্জ (ORB) তৈরি হচ্ছে বা তৈরি হয়ে গেছে। সেশন ব্রেকআউট হলে যেদিকে গতি বাড়বে, আমরা সেই ট্রেন্ডের ডিরেকশনে এন্ট্রি নেব। শান্ত হয়ে অপেক্ষা করো!'")
+                        elif active_mode == "BOUNCE":
+                            commentary_parts.append("🔍 ওস্তাদ বললেন: 'আমরা ট্রেন্ডের সাথে বাউন্স এন্ট্রি খুঁজছি। প্রাইসকে M1 EMA 50-তে পুলব্যাক করতে দাও। ট্রেন্ডের ডিরেকশনে রিজেকশন কনফার্ম হলে আমরা খুব ছোট স্টপ-লসে হাই-প্রফিট ট্রেড নেব!'")
+                        else:
+                            commentary_parts.append("🔍 ওস্তাদ বললেন: 'বাজার পর্যবেক্ষণ করছি। কোনো তাড়াহুড়ো নেই। নো-ট্রেড (No Trade) থাকাও কিন্তু প্রফেশনাল ট্রেডিংয়ের একটা বড় অংশ। নিখুঁত হাই-প্রোবাবিলিটি সেটআপ পেলেই কেবল এন্ট্রি হবে!'")
+
+                    if not commentary_parts:
+                        commentary_parts.append("🔍 ওস্তাদ বললেন: 'সব ঠিকঠাক আছে ছাত্র, হাই-প্রোবাবিলিটি সেটআপের জন্য শান্ত হয়ে অপেক্ষা করো। তাড়াহুড়ো করা লুজারদের স্বভাব।'")
+
+                    trader_commentary = "\n║ ".join(commentary_parts)
+
+                    # Print minimal, clean, premium boxed log layout
+                    log.info(
+                        f"\n"
+                        f"╔═════════════════════════════════════════════════════════════════════════\n"
+                        f"║ 🪙 {symbol} বিশ্লেষণ ও ওস্তাদের ট্রেড গাইড\n"
+                        f"╠═════════════════════════════════════════════════════════════════════════\n"
+                        f"║ 📈 ট্রেন্ড: {trend_dir_bn}\n"
+                        f"║ 🎯 মোড: {active_mode} | ADX: {adx:.1f} ({'শক্তিশালী' if adx >= 25 else 'দুর্বল'} ট্রেন্ড)\n"
+                        f"║ 💧 স্প্রেড: {spread/sym_info.point:.1f} pts (গড়: {avg_spread/sym_info.point:.1f} pts) | M1 ATR: {atr:.4f}\n"
+                        f"╠─────────────────────────────────────────────────────────────────────────\n"
+                        f"║ 👨‍🏫 ছাত্রের জন্য উপদেশ (Guru's Advice):\n"
+                        f"║ {trader_commentary}\n"
+                        f"╚═════════════════════════════════════════════════════════════════════════\n"
+                    )
 
                 # Dynamic cooldown check: scale delay after a loss on this symbol
                 symbol_cooldown = COOLDOWN_SEC
@@ -2120,18 +2193,18 @@ def run():
                 paused, news_title = is_news_paused(symbol)
                 if paused:
                     if n % 300 == 0:
-                        log.info("Symbol %s paused due to high-impact news: %s", symbol, news_title)
+                        log.info("সিম্বল %s হাই-ইম্প্যাক্ট নিউজের কারণে স্থগিত করা হয়েছে: %s", symbol, news_title)
                     continue
 
                 # Dynamic Spread Widening Guard
                 if avg_spread > 0 and spread > 1.5 * avg_spread:
                     if n % 100 == 0:
-                        log.info("⏸ [SPREAD] Widened to %.1f pts (avg %.1f pts) — skipping %s",
+                        log.info("⏸ [SPREAD] স্প্রেড বেড়ে %.1f pts হয়েছে (গড় %.1f pts) — %s পেয়ারটি এড়ানো হচ্ছে",
                                  spread / sym_info.point, avg_spread / sym_info.point, symbol)
                     continue
                 if spread / atr > SPREAD_ATR_LIMIT:
                     if n % 100 == 0:
-                        log.info("⏸ [SPREAD/ATR] ratio %.2f > limit %.2f (spread=%.1f pts, ATR=%.5f) — skipping %s",
+                        log.info("⏸ [SPREAD/ATR] অনুপাত %.2f > সর্বোচ্চ সীমা %.2f (স্প্রেড=%.1f pts, ATR=%.5f) — %s পেয়ারটি এড়ানো হচ্ছে",
                                  spread / atr, SPREAD_ATR_LIMIT, spread / sym_info.point, atr, symbol)
                     continue
 
@@ -2193,22 +2266,45 @@ def run():
                 liq_buy_score,  liq_buy_ctx  = get_liquidity_confluence(rates, "BUY",  mid, atr)
                 liq_sell_score, liq_sell_ctx = get_liquidity_confluence(rates, "SELL", mid, atr)
 
-                if BOT_THOUGHTS:
+                if BOT_THOUGHTS and print_thought:
+                    pool_signal_buy = liq_buy_ctx.get('pool_signal', '')
+                    pool_signal_buy = pool_signal_buy.replace("SSL swept -> institutional BUY zone confirmed", "SSL সুইপ সম্পন্ন -> প্রাতিষ্ঠানিক BUY জোন নিশ্চিত")
+                    pool_signal_buy = pool_signal_buy.replace("BSL swept -> institutional SELL zone confirmed", "BSL সুইপ সম্পন্ন -> প্রাতিষ্ঠানিক SELL জোন নিশ্চিত")
+                    pool_signal_buy = pool_signal_buy.replace("Approaching BSL ahead — resistance pool, caution", "সামনে BSL পুল — সাবধান (রেসিস্ট্যান্স এরিয়া)")
+                    pool_signal_buy = pool_signal_buy.replace("Approaching SSL ahead — support pool, caution", "সামনে SSL পুল — সাবধান (সাপোর্ট এরিয়া)")
+                    pool_signal_buy = pool_signal_buy.replace("No active pool confluence", "কোনো লিকুইডিটি পুল কনফ্লুয়েন্স নেই")
+
+                    pool_signal_sell = liq_sell_ctx.get('pool_signal', '')
+                    pool_signal_sell = pool_signal_sell.replace("SSL swept -> institutional BUY zone confirmed", "SSL সুইপ সম্পন্ন -> প্রাতিষ্ঠানিক BUY জোন নিশ্চিত")
+                    pool_signal_sell = pool_signal_sell.replace("BSL swept -> institutional SELL zone confirmed", "BSL সুইপ সম্পন্ন -> প্রাতিষ্ঠানিক SELL জোন নিশ্চিত")
+                    pool_signal_sell = pool_signal_sell.replace("Approaching BSL ahead — resistance pool, caution", "সামনে BSL পুল — সাবধান (রেসিস্ট্যান্স এরিয়া)")
+                    pool_signal_sell = pool_signal_sell.replace("Approaching SSL ahead — support pool, caution", "সামনে SSL পুল — সাবধান (সাপোর্ট এরিয়া)")
+                    pool_signal_sell = pool_signal_sell.replace("No active pool confluence", "কোনো লিকুইডিটি পুল কনফ্লুয়েন্স নেই")
+
+                    zone_buy = liq_buy_ctx.get('zone', '')
+                    zone_buy_bn = "ডিসকাউন্ট জোন (কম দামে বাই সুবিধা)" if zone_buy == 'discount' else ("প্রিমিয়াম জোন (বাই করা ঝুঁকিপূর্ণ)" if zone_buy == 'premium' else "ফেয়ার ভ্যালু জোন (Equilibrium)")
+                    
+                    zone_sell = liq_sell_ctx.get('zone', '')
+                    zone_sell_bn = "প্রিমিয়াম জোন (বেশি দামে সেল সুবিধা)" if zone_sell == 'premium' else ("ডিসকাউন্ট জোন (সেল করা ঝুঁকিপূর্ণ)" if zone_sell == 'discount' else "ফেয়ার ভ্যালু জোন (Equilibrium)")
+
+                    idm_buy = "হ্যাঁ, স্মার্ট মানি রিভার্সাল সিগন্যাল" if liq_buy_ctx.get('idm') else "না"
+                    idm_sell = "হ্যাঁ, স্মার্ট মানি রিভার্সাল সিগন্যাল" if liq_sell_ctx.get('idm') else "না"
+
                     log.info(
-                        "💧 [LIQUIDITY ENGINE - %s]\n"
-                        "   BUY  liq: %+d pts | Pool: %s | Zone: %s (%s%%) | IDM: %s\n"
-                        "   SELL liq: %+d pts | Pool: %s | Zone: %s (%s%%) | IDM: %s",
+                        "💧 [লিকুইডিটি ইঞ্জিন - %s]\n"
+                        "   BUY  স্কোর: %+d pts | লিকুইডিটি পুল: %s | জোন: %s (%s%%) | রিভার্সাল সিগন্যাল: %s\n"
+                        "   SELL স্কোর: %+d pts | লিকুইডিটি পুল: %s | জোন: %s (%s%%) | রিভার্সাল সিগন্যাল: %s",
                         symbol,
                         liq_buy_ctx.get('total_liq_score', 0),
-                        liq_buy_ctx.get('pool_signal', ''),
-                        liq_buy_ctx.get('zone', ''),
+                        pool_signal_buy,
+                        zone_buy_bn,
                         liq_buy_ctx.get('zone_pct', ''),
-                        liq_buy_ctx.get('idm_signal', ''),
+                        idm_buy,
                         liq_sell_ctx.get('total_liq_score', 0),
-                        liq_sell_ctx.get('pool_signal', ''),
-                        liq_sell_ctx.get('zone', ''),
+                        pool_signal_sell,
+                        zone_sell_bn,
                         liq_sell_ctx.get('zone_pct', ''),
-                        liq_sell_ctx.get('idm_signal', ''),
+                        idm_sell,
                     )
 
                 # ── Pre-entry Quality Gate (shared by ALL strategies) ──────────────
@@ -2220,11 +2316,11 @@ def run():
                 buy_trend_ok  = check_trend_still_valid(rates, "BUY",  ema200_m5, ema50_m15, ema50_h1, adx)
                 sell_trend_ok = check_trend_still_valid(rates, "SELL", ema200_m5, ema50_m15, ema50_h1, adx)
 
-                if BOT_THOUGHTS:
+                if BOT_THOUGHTS and print_thought:
                     if not buy_momentum_ok:
-                        log.info("🚫 [MOMENTUM] BUY momentum not confirmed — last %d candles lack bullish agreement.", MOMENTUM_BARS)
+                        log.info("🚫 [মোমেন্টাম] BUY মোমেন্টাম নিশ্চিত নয় — শেষ %d ক্যান্ডেল কেনার জন্য একমত নয়।", MOMENTUM_BARS)
                     if not sell_momentum_ok:
-                        log.info("🚫 [MOMENTUM] SELL momentum not confirmed — last %d candles lack bearish agreement.", MOMENTUM_BARS)
+                        log.info("🚫 [মোমেন্টাম] SELL মোমেন্টাম নিশ্চিত নয় — শেষ %d ক্যান্ডেল বিক্রয়ের জন্য একমত নয়।", MOMENTUM_BARS)
 
                 # Strategy Mode Selector (Regime Switcher)
                 active_mode = STRATEGY_MODE
@@ -2474,28 +2570,28 @@ def run():
                 hour = datetime.now(timezone.utc).hour
                 equity = acc.equity if acc is not None else 0.0
                 if state["halted"]:
-                    status = f"halted ({state['halt_reason']})"
+                    status = f"স্থগিত করা হয়েছে ({state['halt_reason']})"
                 elif not (SESSION_START_UTC <= hour < SESSION_END_UTC):
-                    status = "outside session (trades 13:00-23:00 your time)"
+                    status = "সেশনের বাইরে (১৩:০০-২৩:০০ বাংলাদেশ সময় ট্রেড চলে)"
                 elif time.time() < state["pause_until"]:
-                    status = "chop pause"
+                    status = "চপি মার্কেট বিরতি"
                 else:
-                    status = "hunting"
-                log.info("Status: %s | equity=%.2f | trades today=%d | open=%d",
+                    status = "শিকার করছে (hunting)"
+                log.info("স্ট্যাটাস: %s | ইকুইটি=%.2f | আজকের মোট ট্রেড=%d | রানিং=%d",
                          status, equity, state["trades_today"], open_count)
             # Run duration limit check for Github Actions
             if RUN_DURATION_HOURS > 0 and (time.time() - BOT_START) > RUN_DURATION_HOURS * 3600:
-                log.info("⏳ Run duration limit reached (%s hours). Initiating clean shutdown...", RUN_DURATION_HOURS)
+                log.info("⏳ রান করার সময়সীমা পূর্ণ হয়েছে (%s ঘণ্টা)। বটটি নিরাপদে বন্ধ করা হচ্ছে...", RUN_DURATION_HOURS)
                 close_all_positions("duration_limit")
                 break
 
             time.sleep(SCAN_SECONDS)
         except KeyboardInterrupt:
-            log.info("Stopped by user.")
-            notify("🤖 Bot stopped.")
+            log.info("ইউজার দ্বারা বটটি বন্ধ করা হয়েছে।")
+            notify("🤖 বট বন্ধ করা হয়েছে।")
             break
         except Exception as e:
-            log.exception("Loop error: %s", e)
+            log.exception("লুপ ত্রুটি: %s", e)
             time.sleep(10)
     mt5.shutdown()
 
