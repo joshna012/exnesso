@@ -112,9 +112,10 @@ TRAIL_DISTANCE_ATR = 1.2          # trail SL at 1.2x ATR behind price
 MAX_HOLD_SECONDS  = 90           # force-close stalled trades
 RISK_PER_TRADE    = 0.01         # base risk: 1% balance per trade
 DAILY_LOSS_LIMIT  = 0.03         # stop day at -3%
-DAILY_PROFIT_GOAL = 0.02         # stop day at +2% (lock the win)
+DAILY_PROFIT_GOAL = 0.05         # target at +5% to activate trailing profit guard
 DAILY_PROFIT_TRAIL_PERCENT = 0.20   # trail floor at peak - 20% of peak profit
 DAILY_PROFIT_MIN_SLACK     = 0.005  # minimum trailing slack of 0.5% of account balance to prevent noise trigger
+DAILY_PROFIT_ATR_SLACK_MULT = 1.5   # dynamic multiplier for ATR-based trailing daily profit slack
 MAX_TRADES_DAY    = 100
 COOLDOWN_SEC      = 60           # normal cooldown per symbol in seconds
 LOSS_STREAK_MAX   = 3            # losses in a row -> pause
@@ -139,7 +140,9 @@ log = logging.getLogger("tickbot")
 open_times = {}                              # ticket -> entry time
 known_deals = set()                          # deals already journaled
 state = {"day": None, "start_balance": 0.0, "trades_today": 0,
-         "last_entry": {s: 0.0 for s in SYMBOLS}, "halted": False,
+         "last_entry": {s: 0.0 for s in SYMBOLS},
+         "last_exit": {s: 0.0 for s in SYMBOLS}, # tracks exit times for cooldown calculations
+         "halted": False,
          "halt_reason": "", "loss_streak": 0, "pause_until": 0.0,
          "partial_closed_tickets": {},
          "last_trade_loss": {s: False for s in SYMBOLS},
@@ -746,6 +749,8 @@ def journal_closed_deals():
             state["loss_streak"] = 0
             state["last_trade_loss"][d.symbol] = False
 
+        state["last_exit"][d.symbol] = time.time()
+
         direction = "SELL" if d.type == mt5.DEAL_TYPE_SELL else "BUY"
         with open(JOURNAL_FILE, "a", newline="") as f:
             csv.writer(f).writerow(
@@ -816,6 +821,7 @@ def close_all_positions(reason=""):
                 })
                 if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
                     log.info("🚨 EMERGENCY CLOSE %s #%d due to: %s", pos.symbol, pos.ticket, reason)
+                    state["last_exit"][pos.symbol] = time.time()
                     closed_any = True
                 else:
                     log.warning("⚠️ Emergency close failed for %s #%d: %s", 
@@ -833,14 +839,15 @@ def daily_guard():
                      halted=False, halt_reason="", loss_streak=0,
                      pause_until=0.0, profit_locked=False, peak_equity_profit=0.0)
         state["last_trade_loss"] = {s: False for s in SYMBOLS}
+        state["last_exit"] = {s: 0.0 for s in SYMBOLS}
         known_deals.clear()
         log.info("New trading day. Start balance: %.2f", acc.balance)
     if state["halted"]:
         return False
 
     # Drawdown limit checks floating equity
-    floating_pnl = (acc.equity - state["start_balance"]) / state["start_balance"]
-    realized_pnl = (acc.balance - state["start_balance"]) / state["start_balance"]
+    floating_pnl = (acc.equity - state["start_balance"]) / state["start_balance"] if state["start_balance"] > 0 else 0.0
+    realized_pnl = (acc.balance - state["start_balance"]) / state["start_balance"] if state["start_balance"] > 0 else 0.0
 
     # Drawdown limit checks floating equity (DISABLED - Solution 3)
     # if floating_pnl <= -DAILY_LOSS_LIMIT:
@@ -862,16 +869,40 @@ def daily_guard():
     if state.get("profit_locked", False):
         state["peak_equity_profit"] = max(state.get("peak_equity_profit", 0.0), max_pnl)
         
-        # Calculate dynamic trailing floor with noise protection slack
-        slack = max(DAILY_PROFIT_MIN_SLACK, state["peak_equity_profit"] * DAILY_PROFIT_TRAIL_PERCENT)
+        # Calculate ATR-based slack for open positions to prevent noise triggers
+        open_atr_slack_pct = 0.0
+        positions = mt5.positions_get() or []
+        for pos in positions:
+            if pos.magic == MAGIC:
+                sym_name = pos.symbol
+                cache = indicators.get(sym_name)
+                sym_info = mt5.symbol_info(sym_name)
+                if cache and cache["atr"] > 0 and sym_info:
+                    # PnL fluctuation of 1.0 * ATR for this position's volume
+                    atr_pnl = (cache["atr"] / sym_info.trade_tick_size) * sym_info.trade_tick_value * pos.volume
+                    # Convert to percent of start balance
+                    atr_pnl_pct = atr_pnl / state["start_balance"] if state["start_balance"] > 0 else 0.0
+                    open_atr_slack_pct += atr_pnl_pct
+        
+        # Calculate dynamic trailing floor with noise protection slack (include dynamic open position ATR slack)
+        slack = max(
+            DAILY_PROFIT_MIN_SLACK,
+            state["peak_equity_profit"] * DAILY_PROFIT_TRAIL_PERCENT,
+            DAILY_PROFIT_ATR_SLACK_MULT * open_atr_slack_pct
+        )
         trailing_floor = state["peak_equity_profit"] - slack
         
         if floating_pnl < trailing_floor:
             close_all_positions("trail_lock")
-            state.update(halted=True, halt_reason="trailing profit locked")
-            log.info("🎯 Trailing Daily Profit hit! Locked in %.2f%% profit. Done for today.", realized_pnl * 100)
-            notify(f"🎯 Trailing Daily Profit hit! Locked in {realized_pnl*100:+.2f}% profit. Balance: {acc.equity:.2f}")
-            return False
+            # Wait briefly for execution and update state with new baseline balance to keep trading
+            time.sleep(0.5)
+            acc_info = mt5.account_info()
+            new_balance = acc_info.balance if acc_info is not None else acc.balance
+            
+            # Reset trailing state with new baseline balance instead of halting
+            state.update(start_balance=new_balance, profit_locked=False, peak_equity_profit=0.0)
+            log.info("🎯 Trailing Daily Profit hit! Locked in %.2f%% profit. Resetting baseline balance to %.2f to continue trading.", realized_pnl * 100, new_balance)
+            notify(f"🎯 Trailing Daily Profit hit! Locked in {realized_pnl*100:+.2f}% profit. Baseline reset to {new_balance:.2f}. Continuing trading.")
 
     hour = datetime.now(timezone.utc).hour
     if not (SESSION_START_UTC <= hour < SESSION_END_UTC):
@@ -999,7 +1030,7 @@ def manage_open():
             tick = mt5.symbol_info_tick(pos.symbol)
             if tick is not None:
                 is_buy = pos.type == mt5.POSITION_TYPE_BUY
-                mt5.order_send({
+                res = mt5.order_send({
                     "action": mt5.TRADE_ACTION_DEAL, "symbol": pos.symbol,
                     "position": pos.ticket, "volume": pos.volume,
                     "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
@@ -1007,6 +1038,8 @@ def manage_open():
                     "deviation": DEVIATION, "magic": MAGIC,
                     "comment": "time_exit", "type_time": mt5.ORDER_TIME_GTC,
                     "type_filling": mt5.ORDER_FILLING_IOC})
+                if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    state["last_exit"][pos.symbol] = time.time()
                 log.info("⏱ Time-stop %s #%s profit=%.2f",
                          pos.symbol, pos.ticket, pos.profit)
                 if BOT_THOUGHTS:
@@ -1329,9 +1362,9 @@ def run():
                         warnings.append(f"⏳ Cooldown pause for another {int(state['pause_until'] - time.time())}s (choppy market).")
                     
                     symbol_cooldown = COOLDOWN_SEC * 3 if state["last_trade_loss"].get(symbol, False) else COOLDOWN_SEC
-                    time_since_last_trade = time.time() - state["last_entry"][symbol]
+                    time_since_last_trade = time.time() - state["last_exit"][symbol]
                     if time_since_last_trade < symbol_cooldown:
-                        warnings.append(f"⏳ Cooldown active for {symbol}: wait {int(symbol_cooldown - time_since_last_trade)}s.")
+                        warnings.append(f"⏳ Cooldown active for {symbol}: wait {symbol_cooldown - time_since_last_trade:.1f}s.")
                     
                     if open_count >= MAX_OPEN_TOTAL:
                         warnings.append(f"🚫 Max open positions limit reached ({open_count}/{MAX_OPEN_TOTAL}).")
@@ -1375,7 +1408,7 @@ def run():
                     symbol_cooldown = COOLDOWN_SEC * 3
 
                 if (not can_trade or open_count >= MAX_OPEN_TOTAL
-                        or time.time() - state["last_entry"][symbol] < symbol_cooldown):
+                        or time.time() - state["last_exit"][symbol] < symbol_cooldown):
                     continue
                 if any(p.symbol == symbol and p.magic == MAGIC
                        for p in mt5.positions_get(symbol=symbol) or []):
