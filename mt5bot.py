@@ -109,7 +109,7 @@ TRAIL_TRIGGER_ATR  = 1.0          # trigger trail when profit > 1.0x ATR
 BREAKEVEN_BUFFER_ATR = 0.1        # move SL to entry + 0.1x ATR
 TRAIL_DISTANCE_ATR = 1.2          # trail SL at 1.2x ATR behind price
 
-MAX_HOLD_SECONDS  = 90           # force-close stalled trades
+MAX_HOLD_SECONDS  = 600          # force-close stalled trades (10 minutes - optimal for XAUUSD)
 RISK_PER_TRADE    = 0.01         # base risk: 1% balance per trade
 DAILY_LOSS_LIMIT  = 0.03         # stop day at -3%
 DAILY_PROFIT_GOAL = 0.05         # target at +5% to activate trailing profit guard
@@ -136,6 +136,54 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("tickbot")
 
+# ============================================================
+# NEW v7.0 ADVANCED CONFIG
+# ============================================================
+# Discord Webhook (optional backup notification)
+DISCORD_WEBHOOK       = os.environ.get("DISCORD_WEBHOOK", "")
+
+# Volatility Regime Filter
+VOLATILITY_ATR_PERIOD = 50          # rolling ATR average lookback
+VOLATILITY_HIGH_MULT  = 2.0         # block if ATR > 2x avg (news spike)
+VOLATILITY_LOW_MULT   = 0.4         # block if ATR < 0.4x avg (dead market)
+
+# Dynamic TP based on ADX strength
+DYNAMIC_TP_ENABLED    = True        # enable dynamic TP ratio
+TP_ATR_WEAK           = 2.0         # TP multiplier when ADX 20-25 (weak trend)
+TP_ATR_NORMAL         = 3.0         # TP multiplier when ADX 25-30
+TP_ATR_STRONG         = 4.5         # TP multiplier when ADX > 30 (strong trend)
+
+# MACD Settings (new confluence filter)
+MACD_FAST             = 12
+MACD_SLOW             = 26
+MACD_SIGNAL_PERIOD    = 9
+MACD_CONFLUENCE       = True        # require MACD histogram alignment for entry
+
+# Adaptive QTP Threshold (self-learning)
+ADAPTIVE_QTP_ENABLED  = True        # auto-adjust QTP threshold based on recent win rate
+ADAPTIVE_QTP_LOOKBACK = 20          # last N trades to evaluate
+ADAPTIVE_QTP_MIN      = 65          # minimum QTP threshold floor
+ADAPTIVE_QTP_MAX      = 90          # maximum QTP threshold ceiling
+
+# Kelly Criterion Risk Sizing
+KELLY_ENABLED         = True        # use Kelly criterion for position sizing
+KELLY_FRACTION        = 0.25        # fractional Kelly (25% of full Kelly = safer)
+KELLY_MIN_TRADES      = 10          # minimum trades before Kelly activates
+
+# Session-based risk multiplier
+SESSION_RISK_MULTIPLIERS = {
+    "london":  1.2,   # London session
+    "ny":      1.1,   # NY session
+    "overlap": 1.3,   # London/NY overlap (13:00-17:00 UTC) — best setups
+    "tokyo":   0.8,   # Tokyo session — less risk for gold
+    "off":     0.5,   # Off-hours
+}
+
+# NY Session Close — force-close all positions near end of NY session
+NY_CLOSE_HOUR_UTC     = 21          # 21:00 UTC = NY market close
+NY_CLOSE_ENABLED      = True        # enable end-of-day close
+
+# ============================================================
 # Global State
 open_times = {}                              # ticket -> entry time
 known_deals = set()                          # deals already journaled
@@ -150,11 +198,21 @@ state = {"day": None, "start_balance": 0.0, "trades_today": 0,
          "orb_ranges": {},
          "last_commentary_time": {s: 0 for s in SYMBOLS},
          "profit_locked": False,
-         "peak_equity_profit": 0.0} # tracks loss per symbol, DXY strength, session ORB ranges, commentary timing, and daily trailing profit states
+         "peak_equity_profit": 0.0,
+         # v7.0 new state fields
+         "trade_outcomes": [],           # list of True/False for recent trades (win rate tracker)
+         "adaptive_qtp": QTP_THRESHOLD,  # current adaptive QTP threshold (self-learning)
+         "kelly_win_rate": 0.5,          # estimated win rate for Kelly sizing
+         "kelly_avg_rr": 2.5,            # estimated avg R:R for Kelly sizing
+         "ny_close_done": False,         # tracks if NY close already triggered today
+         "volatility_regime": "normal",  # current volatility regime: normal/high/low
+         }
 BOT_START = time.time()                      # session start marker
 
-# Technical Indicators Cache
-indicators = {s: {"atr": 0.0, "ema50": 0.0, "ema50_m15": 0.0, "ema200_m5": 0.0, "ema50_h1": 0.0, "adx": 0.0, "rsi_m15": 50.0, "avg_spread": 0.0, "last_update": 0.0} for s in SYMBOLS}
+# Technical Indicators Cache (v7.0: added macd, avg_atr for volatility regime)
+indicators = {s: {"atr": 0.0, "ema50": 0.0, "ema50_m15": 0.0, "ema200_m5": 0.0, "ema50_h1": 0.0,
+                  "adx": 0.0, "rsi_m15": 50.0, "avg_spread": 0.0,
+                  "macd_hist": 0.0, "avg_atr": 0.0, "last_update": 0.0} for s in SYMBOLS}
 
 # ---------------- INDICATORS ----------------
 def compute_atr(rates, period=14):
@@ -283,7 +341,113 @@ def compute_rsi(rates, period=14):
             rsi[i] = 100.0 - (100.0 / (1.0 + rs))
     return rsi
 
-def update_indicators():
+def compute_macd(rates, fast=12, slow=26, signal=9):
+    """Compute MACD line, signal line, and histogram. Returns (macd_line, signal_line, histogram) last values."""
+    close = rates['close']
+    if len(close) < slow + signal:
+        return 0.0, 0.0, 0.0
+    alpha_fast = 2.0 / (fast + 1)
+    alpha_slow = 2.0 / (slow + 1)
+    alpha_sig  = 2.0 / (signal + 1)
+    ema_fast = np.zeros(len(close))
+    ema_slow = np.zeros(len(close))
+    ema_fast[0] = close[0]
+    ema_slow[0] = close[0]
+    for i in range(1, len(close)):
+        ema_fast[i] = close[i] * alpha_fast + ema_fast[i-1] * (1 - alpha_fast)
+        ema_slow[i] = close[i] * alpha_slow + ema_slow[i-1] * (1 - alpha_slow)
+    macd_line = ema_fast - ema_slow
+    sig_line  = np.zeros(len(close))
+    sig_line[0] = macd_line[0]
+    for i in range(1, len(close)):
+        sig_line[i] = macd_line[i] * alpha_sig + sig_line[i-1] * (1 - alpha_sig)
+    histogram = macd_line - sig_line
+    return macd_line[-1], sig_line[-1], histogram[-1]
+
+def compute_avg_atr(rates, period=14, avg_period=50):
+    """Compute rolling average of ATR over avg_period candles for volatility regime detection."""
+    if len(rates) < period + avg_period:
+        return compute_atr(rates, period)
+    high, low, close = rates['high'], rates['low'], rates['close']
+    prev_close = np.roll(close, 1); prev_close[0] = close[0]
+    tr = np.maximum(high - low, np.maximum(np.abs(high - prev_close), np.abs(low - prev_close)))
+    # Compute ATR at each point using Wilder's smoothing
+    atr_series = np.zeros(len(tr))
+    atr_series[period-1] = tr[:period].mean()
+    alpha = 1.0 / period
+    for i in range(period, len(tr)):
+        atr_series[i] = tr[i] * alpha + atr_series[i-1] * (1 - alpha)
+    # Average the last avg_period ATR values
+    valid = atr_series[atr_series > 0]
+    if len(valid) < avg_period:
+        return atr_series[-1]
+    return np.mean(valid[-avg_period:])
+
+def get_session_name(hour_utc):
+    """Return current session name based on UTC hour."""
+    if 13 <= hour_utc < 17:
+        return "overlap"   # London/NY overlap — best liquidity
+    elif 13 <= hour_utc < 22:
+        return "ny"
+    elif 7 <= hour_utc < 17:
+        return "london"
+    elif 0 <= hour_utc < 8:
+        return "tokyo"
+    else:
+        return "off"
+
+def get_dynamic_tp_mult(adx):
+    """Return TP ATR multiplier based on current ADX trend strength."""
+    if not DYNAMIC_TP_ENABLED:
+        return TP_ATR_MULT
+    if adx >= 30:
+        return TP_ATR_STRONG    # 4.5x — ride the strong trend
+    elif adx >= 25:
+        return TP_ATR_NORMAL    # 3.0x — standard
+    else:
+        return TP_ATR_WEAK      # 2.0x — weak trend, take profit quicker
+
+def update_adaptive_qtp():
+    """Adjust QTP threshold based on recent win rate (self-learning)."""
+    if not ADAPTIVE_QTP_ENABLED:
+        return
+    outcomes = state["trade_outcomes"]
+    if len(outcomes) < 5:
+        return  # not enough data yet
+    recent = outcomes[-ADAPTIVE_QTP_LOOKBACK:]
+    win_rate = sum(recent) / len(recent)
+    state["kelly_win_rate"] = win_rate
+    current = state["adaptive_qtp"]
+    if win_rate < 0.40:
+        # Bad performance -> raise threshold (be more selective)
+        new_qtp = min(current + 5, ADAPTIVE_QTP_MAX)
+        if new_qtp != current:
+            state["adaptive_qtp"] = new_qtp
+            log.info("📉 [ADAPTIVE QTP] Win rate %.0f%% is low. Raised QTP threshold to %d (more selective).", win_rate*100, new_qtp)
+    elif win_rate > 0.65:
+        # Good performance -> lower threshold slightly (more trades)
+        new_qtp = max(current - 3, ADAPTIVE_QTP_MIN)
+        if new_qtp != current:
+            state["adaptive_qtp"] = new_qtp
+            log.info("📈 [ADAPTIVE QTP] Win rate %.0f%% is high. Lowered QTP threshold to %d (more trades).", win_rate*100, new_qtp)
+
+def get_kelly_risk(base_risk):
+    """Calculate position risk % using fractional Kelly criterion."""
+    if not KELLY_ENABLED or len(state["trade_outcomes"]) < KELLY_MIN_TRADES:
+        return base_risk
+    w = state["kelly_win_rate"]
+    r = state["kelly_avg_rr"]
+    if r <= 0 or w <= 0:
+        return base_risk
+    # Kelly formula: f* = (w * r - (1 - w)) / r
+    kelly_full = (w * r - (1 - w)) / r
+    kelly_full = max(0.0, kelly_full)  # Kelly can't be negative
+    kelly_risk = kelly_full * KELLY_FRACTION
+    # Cap between 0.1% and 3%
+    kelly_risk = max(0.001, min(0.03, kelly_risk))
+    return kelly_risk
+
+
     global last_news_fetch, news_events
     now = time.time()
     
@@ -317,11 +481,24 @@ def update_indicators():
                 ema50_m15 = compute_ema(rates_m15, EMA_M15_PERIOD)[-1]
                 ema50_h1 = compute_ema(rates_h1, EMA_H1_PERIOD)[-1]
                 rsi_m15 = compute_rsi(rates_m15, RSI_PERIOD)[-1]
+                # v7.0: MACD and average ATR for volatility regime
+                _, _, macd_hist = compute_macd(rates, MACD_FAST, MACD_SLOW, MACD_SIGNAL_PERIOD)
+                avg_atr = compute_avg_atr(rates, ATR_PERIOD, VOLATILITY_ATR_PERIOD)
                 
                 sym_info = mt5.symbol_info(s)
                 avg_spread = 0.0
                 if sym_info is not None:
                     avg_spread = np.mean(rates['spread'][-21:-1]) * sym_info.point
+                
+                # Determine volatility regime
+                if avg_atr > 0:
+                    ratio = atr / avg_atr
+                    if ratio > VOLATILITY_HIGH_MULT:
+                        state["volatility_regime"] = "high"
+                    elif ratio < VOLATILITY_LOW_MULT:
+                        state["volatility_regime"] = "low"
+                    else:
+                        state["volatility_regime"] = "normal"
                 
                 indicators[s] = {
                     "atr": atr,
@@ -332,6 +509,8 @@ def update_indicators():
                     "adx": adx,
                     "rsi_m15": rsi_m15,
                     "avg_spread": avg_spread,
+                    "macd_hist": macd_hist,
+                    "avg_atr": avg_atr,
                     "last_update": now
                 }
             elif cache is None:
@@ -401,7 +580,7 @@ def is_news_paused(symbol):
                 return True, ev['title']
     return False, ""
 
-def get_qtp_score(symbol, direction, mid, ema200_m5, ema50_m15, ema50_h1, dxy_aligned, adx, rvol, rsi_m15):
+def get_qtp_score(symbol, direction, mid, ema200_m5, ema50_m15, ema50_h1, dxy_aligned, adx, rvol, rsi_m15, macd_hist=0.0):
     score = 0
     
     # 1. Trend Alignment check M5 + M15 (20 points)
@@ -438,17 +617,25 @@ def get_qtp_score(symbol, direction, mid, ema200_m5, ema50_m15, ema50_h1, dxy_al
     elif rvol >= 1.5:
         score += 10
         
-    # 6. Synthetic Retail Sentiment via M15 RSI (15 points)
+    # 6. Synthetic Retail Sentiment via M15 RSI (10 points, reduced to make room for MACD)
     if direction == "BUY":
         if rsi_m15 < 30:
-            score += 15  # retail panic selling -> high prob bounce/reversal
+            score += 10
         elif rsi_m15 < 70:
-            score += 10  # neutral/standard
-    else: # SELL
+            score += 7
+    else:
         if rsi_m15 > 70:
-            score += 15  # retail panic buying -> high prob sell/reversal
+            score += 10
         elif rsi_m15 > 30:
-            score += 10  # neutral/standard
+            score += 7
+
+    # 7. NEW v7.0: MACD Histogram Confluence (10 points)
+    if MACD_CONFLUENCE and macd_hist != 0.0:
+        if direction == "BUY" and macd_hist > 0:
+            score += 10   # MACD histogram positive = bullish momentum confirmed
+        elif direction == "SELL" and macd_hist < 0:
+            score += 10   # MACD histogram negative = bearish momentum confirmed
+        # MACD divergence (opposing histogram) gives 0 bonus — acts as soft filter
             
     return score
 
@@ -711,6 +898,18 @@ def notify(msg):
         except Exception as e:
             log.warning("Facebook notification failed: %s", e)
 
+    # v7.0: Discord Webhook backup notification
+    if DISCORD_WEBHOOK:
+        try:
+            import json as _json
+            payload = _json.dumps({"content": f"🤖 **MT5 Bot** | {msg}"}).encode("utf-8")
+            req = urllib.request.Request(
+                DISCORD_WEBHOOK, data=payload,
+                headers={"Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(req, timeout=5)
+        except Exception as e:
+            log.warning("Discord notification failed: %s", e)
+
 # ---------------- JOURNAL ----------------
 def init_journal():
     if not os.path.exists(JOURNAL_FILE):
@@ -748,6 +947,18 @@ def journal_closed_deals():
         else:
             state["loss_streak"] = 0
             state["last_trade_loss"][d.symbol] = False
+
+        # v7.0: Track outcome for Adaptive QTP & Kelly Criterion
+        is_win = d.profit >= 0
+        state["trade_outcomes"].append(is_win)
+        if len(state["trade_outcomes"]) > ADAPTIVE_QTP_LOOKBACK * 2:
+            state["trade_outcomes"] = state["trade_outcomes"][-ADAPTIVE_QTP_LOOKBACK:]
+        # Update Kelly avg R:R estimate from journal (approximate)
+        if len(state["trade_outcomes"]) >= KELLY_MIN_TRADES:
+            wins = [o for o in state["trade_outcomes"] if o]
+            losses = [o for o in state["trade_outcomes"] if not o]
+            state["kelly_win_rate"] = len(wins) / len(state["trade_outcomes"])
+        update_adaptive_qtp()
 
         state["last_exit"][d.symbol] = time.time()
 
@@ -837,7 +1048,8 @@ def daily_guard():
     if state["day"] != today:
         state.update(day=today, start_balance=acc.balance, trades_today=0,
                      halted=False, halt_reason="", loss_streak=0,
-                     pause_until=0.0, profit_locked=False, peak_equity_profit=0.0)
+                     pause_until=0.0, profit_locked=False, peak_equity_profit=0.0,
+                     ny_close_done=False)
         state["last_trade_loss"] = {s: False for s in SYMBOLS}
         state["last_exit"] = {s: 0.0 for s in SYMBOLS}
         known_deals.clear()
@@ -946,15 +1158,24 @@ def open_trade(symbol, direction, sl, tp, sl_dist, qtp_score=0):
     streak = state.get("loss_streak", 0)
     risk_multiplier = 1.0 / (2 ** streak)
 
+    # v7.0: Session-based risk multiplier
+    hour_now = datetime.now(timezone.utc).hour
+    session_name = get_session_name(hour_now)
+    session_mult = SESSION_RISK_MULTIPLIERS.get(session_name, 1.0)
+
+    # v7.0: Kelly Criterion base risk
+    base_risk = get_kelly_risk(RISK_PER_TRADE)
+
     # Combined Dynamic Risk Percentage
-    current_risk = RISK_PER_TRADE * qtp_factor * risk_multiplier
+    current_risk = base_risk * qtp_factor * risk_multiplier * session_mult
     # Cap risk between 0.1% and 3.0% of account balance for safety
     current_risk = max(0.001, min(0.03, current_risk))
     
     if BOT_THOUGHTS:
         log.info(f"🧠 [BOT BRAIN - RISK ANALYSIS] Setup QTP Score: {qtp_score}/100 (Setup Factor: {qtp_factor:.2f}x) | "
-                 f"Loss Streak: {streak} (Streak Multiplier: {risk_multiplier:.2f}x) -> "
-                 f"Dynamically set Trade Risk to {current_risk * 100:.2f}% of balance (Base: {RISK_PER_TRADE * 100:.2f}%).")
+                 f"Loss Streak: {streak} (Streak Multiplier: {risk_multiplier:.2f}x) | "
+                 f"Session: {session_name} (Session Mult: {session_mult:.2f}x) | Kelly Base: {base_risk*100:.2f}% -> "
+                 f"Dynamically set Trade Risk to {current_risk * 100:.2f}% of balance.")
                  
     volume = lot_size(symbol, sl_dist, current_risk)
 
@@ -1261,6 +1482,28 @@ def run():
                 adx = cache["adx"]
                 rsi_m15 = cache["rsi_m15"]
                 avg_spread = cache["avg_spread"]
+                macd_hist = cache.get("macd_hist", 0.0)  # v7.0
+
+                # v7.0: Volatility Regime Filter — skip if market is spiking or dead
+                vol_regime = state.get("volatility_regime", "normal")
+                if vol_regime == "high":
+                    if n % 300 == 0:
+                        log.info("⚡ [VOLATILITY GUARD] ATR spike detected (regime=HIGH). Skipping entries for %s.", symbol)
+                    continue
+                if vol_regime == "low":
+                    if n % 300 == 0:
+                        log.info("💤 [VOLATILITY GUARD] Market is dead (regime=LOW). Skipping entries for %s.", symbol)
+                    continue
+
+                # v7.0: NY Session Close — force-close all trades near end of NY session
+                hour_utc = datetime.now(timezone.utc).hour
+                if NY_CLOSE_ENABLED and hour_utc >= NY_CLOSE_HOUR_UTC and not state.get("ny_close_done", False):
+                    positions_open = [p for p in (mt5.positions_get() or []) if p.magic == MAGIC]
+                    if positions_open:
+                        log.info("🌙 [NY CLOSE] NY session ending (%02d:00 UTC). Closing %d position(s) for end-of-day.", NY_CLOSE_HOUR_UTC, len(positions_open))
+                        close_all_positions("ny_session_close")
+                        notify(f"🌙 NY Session Close: {len(positions_open)} position(s) closed for end-of-day.")
+                    state["ny_close_done"] = True
 
                 # Get M1 rates to inspect setups
                 rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 100)
@@ -1528,25 +1771,25 @@ def run():
 
                     ema50_arr = compute_ema(rates, EMA_PERIOD)
 
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15)
+                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
 
                     # BUY condition
-                    if (buy_score >= QTP_THRESHOLD and not dxy_velocity_blocked_buy and mid > ema50_arr[-1] and 
+                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and mid > ema50_arr[-1] and 
                         c_close > c_open and tick.ask > highest_high):
                         entry_price = tick.ask
                         sl = entry_price - SL_ATR_MULT * atr
-                        tp = entry_price + TP_ATR_MULT * atr
+                        tp = entry_price + get_dynamic_tp_mult(adx) * atr
                         sl_dist = entry_price - sl
                         open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
                         open_count += 1
 
                     # SELL condition
-                    elif (sell_score >= QTP_THRESHOLD and not dxy_velocity_blocked_sell and mid < ema50_arr[-1] and 
+                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and mid < ema50_arr[-1] and 
                           c_close < c_open and tick.bid < lowest_low):
                         entry_price = tick.bid
                         sl = entry_price + SL_ATR_MULT * atr
-                        tp = entry_price - TP_ATR_MULT * atr
+                        tp = entry_price - get_dynamic_tp_mult(adx) * atr
                         sl_dist = sl - entry_price
                         open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
                         open_count += 1
@@ -1557,11 +1800,11 @@ def run():
                     highest_high = np.max(sweep_rates['high'])
                     lowest_low = np.min(sweep_rates['low'])
 
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15)
+                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
 
                     # BUY condition
-                    if (buy_score >= QTP_THRESHOLD and not dxy_velocity_blocked_buy):
+                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy):
                         lower_wick = min(c_open, c_close) - c_low
                         wick_ratio = lower_wick / c_range if c_range > 0 else 0
                         
@@ -1574,13 +1817,13 @@ def run():
                                 if tick.ask > c_high:
                                     entry_price = tick.ask
                                     sl = min(c_low - 0.2 * atr, entry_price - SL_ATR_MULT * atr)
-                                    tp = entry_price + TP_ATR_MULT * atr
+                                    tp = entry_price + get_dynamic_tp_mult(adx) * atr
                                     sl_dist = entry_price - sl
                                     open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
                                     open_count += 1
 
                     # SELL condition
-                    elif (sell_score >= QTP_THRESHOLD and not dxy_velocity_blocked_sell):
+                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell):
                         upper_wick = c_high - max(c_open, c_close)
                         wick_ratio = upper_wick / c_range if c_range > 0 else 0
                         
@@ -1593,7 +1836,7 @@ def run():
                                 if tick.bid < c_low:
                                     entry_price = tick.bid
                                     sl = max(c_high + 0.2 * atr, entry_price + SL_ATR_MULT * atr)
-                                    tp = entry_price - TP_ATR_MULT * atr
+                                    tp = entry_price - get_dynamic_tp_mult(adx) * atr
                                     sl_dist = sl - entry_price
                                     open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
                                     open_count += 1
@@ -1602,30 +1845,30 @@ def run():
                     # Smart Money Concepts: Fair Value Gap Mitigation
                     bull_fvgs, bear_fvgs = find_active_fvgs(rates)
                     
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15)
+                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
                     
                     # BUY condition: FVG mitigation & rejection
-                    if buy_score >= QTP_THRESHOLD and not dxy_velocity_blocked_buy and len(bull_fvgs) > 0:
+                    if buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and len(bull_fvgs) > 0:
                         fvg = bull_fvgs[-1]
                         if c_low <= fvg['ceiling'] and c_close > fvg['floor'] and c_close > c_open:
                             if tick.ask > c_high:
                                 entry_price = tick.ask
                                 sl = min(c_low - 0.2 * atr, entry_price - SL_ATR_MULT * atr)
-                                tp = entry_price + TP_ATR_MULT * atr
+                                tp = entry_price + get_dynamic_tp_mult(adx) * atr
                                   # Fix formatting
                                 sl_dist = entry_price - sl
                                 open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
                                 open_count += 1
                                 
                     # SELL condition: FVG mitigation & rejection
-                    elif sell_score >= QTP_THRESHOLD and not dxy_velocity_blocked_sell and len(bear_fvgs) > 0:
+                    elif sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and len(bear_fvgs) > 0:
                         fvg = bear_fvgs[-1]
                         if c_high >= fvg['floor'] and c_close < fvg['ceiling'] and c_close < c_open:
                             if tick.bid < c_low:
                                 entry_price = tick.bid
                                 sl = max(c_high + 0.2 * atr, entry_price + SL_ATR_MULT * atr)
-                                tp = entry_price - TP_ATR_MULT * atr
+                                tp = entry_price - get_dynamic_tp_mult(adx) * atr
                                 sl_dist = sl - entry_price
                                 open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
                                 open_count += 1
@@ -1634,8 +1877,8 @@ def run():
                     # Opening Range Breakout
                     orb_range = get_orb_ranges(symbol)
                     
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15)
+                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
                     
                     hour = datetime.now(timezone.utc).hour
                     if hour >= 13:
@@ -1653,19 +1896,19 @@ def run():
                         range_low = orb_range[low_key]
                         
                         # BUY condition: breakout of range high
-                        if buy_score >= QTP_THRESHOLD and not dxy_velocity_blocked_buy and tick.ask > range_high and c_close > c_open:
+                        if buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and tick.ask > range_high and c_close > c_open:
                             entry_price = tick.ask
                             sl = entry_price - SL_ATR_MULT * atr
-                            tp = entry_price + TP_ATR_MULT * atr
+                            tp = entry_price + get_dynamic_tp_mult(adx) * atr
                             sl_dist = entry_price - sl
                             open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
                             open_count += 1
                             
                         # SELL condition: breakout of range low
-                        elif sell_score >= QTP_THRESHOLD and not dxy_velocity_blocked_sell and tick.bid < range_low and c_close < c_open:
+                        elif sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and tick.bid < range_low and c_close < c_open:
                             entry_price = tick.bid
                             sl = entry_price + SL_ATR_MULT * atr
-                            tp = entry_price - TP_ATR_MULT * atr
+                            tp = entry_price - get_dynamic_tp_mult(adx) * atr
                             sl_dist = sl - entry_price
                             open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
                             open_count += 1
@@ -1674,29 +1917,29 @@ def run():
                     # Smart Money Concepts: Order Block Mitigation
                     bull_obs, bear_obs = find_active_order_blocks(rates, atr)
                     
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15)
+                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
                     
                     # BUY condition: Price tests Bullish OB ceiling and rejects it
-                    if buy_score >= QTP_THRESHOLD and not dxy_velocity_blocked_buy and len(bull_obs) > 0:
+                    if buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and len(bull_obs) > 0:
                         ob = bull_obs[-1]
                         if c_low <= ob['ceiling'] and c_close > ob['floor'] and c_close > c_open:
                             if tick.ask > c_high:
                                 entry_price = tick.ask
                                 sl = min(c_low - 0.2 * atr, entry_price - SL_ATR_MULT * atr)
-                                tp = entry_price + TP_ATR_MULT * atr
+                                tp = entry_price + get_dynamic_tp_mult(adx) * atr
                                 sl_dist = entry_price - sl
                                 open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
                                 open_count += 1
                                 
                     # SELL condition: Price tests Bearish OB floor and rejects it
-                    elif sell_score >= QTP_THRESHOLD and not dxy_velocity_blocked_sell and len(bear_obs) > 0:
+                    elif sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and len(bear_obs) > 0:
                         ob = bear_obs[-1]
                         if c_high >= ob['floor'] and c_close < ob['ceiling'] and c_close < c_open:
                             if tick.bid < c_low:
                                 entry_price = tick.bid
                                 sl = max(c_high + 0.2 * atr, entry_price + SL_ATR_MULT * atr)
-                                tp = entry_price - TP_ATR_MULT * atr
+                                tp = entry_price - get_dynamic_tp_mult(adx) * atr
                                 sl_dist = sl - entry_price
                                 open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
                                 open_count += 1
@@ -1706,31 +1949,31 @@ def run():
                     ema50_arr = compute_ema(rates, EMA_PERIOD)
                     ema50_val = ema50_arr[-2]
 
-                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15)
-                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15)
+                    buy_score = get_qtp_score(symbol, "BUY", mid, ema200_m5, ema50_m15, ema50_h1, dxy_buy_aligned, adx, rvol, rsi_m15, macd_hist)
+                    sell_score = get_qtp_score(symbol, "SELL", mid, ema200_m5, ema50_m15, ema50_h1, dxy_sell_aligned, adx, rvol, rsi_m15, macd_hist)
 
                     # BUY condition
-                    if (buy_score >= QTP_THRESHOLD and not dxy_velocity_blocked_buy and mid > ema50_arr[-1]):
+                    if (buy_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_buy and mid > ema50_arr[-1]):
                         # Touch and bounce check
                         if (c_low <= ema50_val and c_close > ema50_val and c_close > c_open):
                             # Trigger: breaks setup high
                             if tick.ask > c_high:
                                 entry_price = tick.ask
                                 sl = min(c_low - 0.2 * atr, entry_price - SL_ATR_MULT * atr)
-                                tp = entry_price + TP_ATR_MULT * atr
+                                tp = entry_price + get_dynamic_tp_mult(adx) * atr
                                 sl_dist = entry_price - sl
                                 open_trade(symbol, "BUY", sl, tp, sl_dist, qtp_score=buy_score)
                                 open_count += 1
 
                     # SELL condition
-                    elif (sell_score >= QTP_THRESHOLD and not dxy_velocity_blocked_sell and mid < ema50_arr[-1]):
+                    elif (sell_score >= state["adaptive_qtp"] and not dxy_velocity_blocked_sell and mid < ema50_arr[-1]):
                         # Touch and bounce check
                         if (c_high >= ema50_val and c_close < ema50_val and c_close < c_open):
                             # Trigger: breaks setup low
                             if tick.bid < c_low:
                                 entry_price = tick.bid
                                 sl = max(c_high + 0.2 * atr, entry_price + SL_ATR_MULT * atr)
-                                tp = entry_price - TP_ATR_MULT * atr
+                                tp = entry_price - get_dynamic_tp_mult(adx) * atr
                                 sl_dist = sl - entry_price
                                 open_trade(symbol, "SELL", sl, tp, sl_dist, qtp_score=sell_score)
                                 open_count += 1
