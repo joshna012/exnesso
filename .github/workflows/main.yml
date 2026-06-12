@@ -127,23 +127,23 @@ jobs:
               "print('=== AUTOMATION CHECKS ===')",
               "term = mt5.terminal_info()",
               "if term.trade_allowed:",
-              "    print('✅ SUCCESS: Algorithmic Trading (AutoTrading) is ENABLED in terminal!')",
+              "    print('[SUCCESS]: Algorithmic Trading (AutoTrading) is ENABLED in terminal!')",
               "else:",
-              "    print('❌ ERROR: Algorithmic Trading is DISABLED in terminal!')",
+              "    print('[ERROR]: Algorithmic Trading is DISABLED in terminal!')",
               "    sys.exit(1)",
               "if info.trade_allowed:",
-              "    print('✅ SUCCESS: Trading is allowed on this Account!')",
+              "    print('[SUCCESS]: Trading is allowed on this Account!')",
               "else:",
-              "    print('❌ ERROR: Trading is not allowed on this Account!')",
+              "    print('[ERROR]: Trading is not allowed on this Account!')",
               "    sys.exit(1)",
               "print('=== REAL TRADE EXECUTION TEST ===')",
               "symbol = 'XAUUSDm'",
               "if not mt5.symbol_select(symbol, True):",
-              "    print(f'❌ ERROR: Symbol {symbol} not available for trading!')",
+              "    print(f'[ERROR]: Symbol {symbol} not available for trading!')",
               "    sys.exit(1)",
               "tick = mt5.symbol_info_tick(symbol)",
               "if tick is None:",
-              "    print(f'❌ ERROR: Could not fetch tick for {symbol}!')",
+              "    print(f'[ERROR]: Could not fetch tick for {symbol}!')",
               "    sys.exit(1)",
               "sym_info = mt5.symbol_info(symbol)",
               "volume = sym_info.volume_min if sym_info else 0.01",
@@ -163,10 +163,10 @@ jobs:
               "if res is None or res.retcode != mt5.TRADE_RETCODE_DONE:",
               "    ret = getattr(res, 'retcode', 'None')",
               "    comm = getattr(res, 'comment', 'Unknown error')",
-              "    print(f'❌ ERROR: Test trade execution failed! Retcode: {ret}, Comment: {comm}')",
+              "    print(f'[ERROR]: Test trade execution failed! Retcode: {ret}, Comment: {comm}')",
               "    sys.exit(1)",
               "ticket = res.order",
-              "print(f'✅ SUCCESS: Test trade opened successfully! Ticket ID: {ticket}')",
+              "print(f'[SUCCESS]: Test trade opened successfully! Ticket ID: {ticket}')",
               "print('Waiting 5 seconds before closing the test trade...')",
               "time.sleep(5)",
               "tick = mt5.symbol_info_tick(symbol)",
@@ -186,9 +186,9 @@ jobs:
               "if res_close is None or res_close.retcode != mt5.TRADE_RETCODE_DONE:",
               "    ret_c = getattr(res_close, 'retcode', 'None')",
               "    comm_c = getattr(res_close, 'comment', 'Unknown error')",
-              "    print(f'❌ WARNING: Test trade close failed! Retcode: {ret_c}, Comment: {comm_c}')",
+              "    print(f'[WARNING]: Test trade close failed! Retcode: {ret_c}, Comment: {comm_c}')",
               "else:",
-              "    print(f'✅ SUCCESS: Test trade closed successfully! Profit/Loss: {res_close.profit} USD')",
+              "    print(f'[SUCCESS]: Test trade closed successfully! Profit/Loss: {res_close.profit} USD')",
               "mt5.shutdown()"
           )
           $code | Out-File -FilePath "temp_check.py" -Encoding utf8
@@ -196,6 +196,7 @@ jobs:
           Remove-Item -Path "temp_check.py" -ErrorAction SilentlyContinue
         env:
           PYTHONUNBUFFERED: "1"
+          PYTHONIOENCODING: "utf-8"
           MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
           MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
           MT5_SERVER: ${{ secrets.MT5_SERVER }}
