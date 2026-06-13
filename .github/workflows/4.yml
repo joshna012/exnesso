@@ -1,88 +1,36 @@
-name: VyprVPN Windows Runner
+name: VPN Task Workflow
 
-on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
+on: [workflow_dispatch]
 
 jobs:
-  vpn-windows:
-    runs-on: windows-latest
-
+  vpn-job:
+    runs-on: ubuntu-latest
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Install OpenVPN on Windows
-      run: |
-        choco install openvpn -y
-      shell: powershell
+      - name: Install OpenVPN
+        run: sudo apt-get update && sudo apt-get install -y openvpn
 
-    - name: Download VyprVPN CA Certificate
-      run: |
-        # VyprVPN-এর অফিশিয়াল সার্টিফিকেট ডাউনলোড
-        Invoke-WebRequest -Uri "https://vyprvpn.com" -OutFile "C:\Program Files\OpenVPN\config\://vyprvpn.com.crt"
-      shell: powershell
+      - name: Create Auth file
+        run: |
+          echo "shawonadobestock+tteca@gmail.com" > vpn_auth.txt
+          echo "Shawon63@@" >> vpn_auth.txt
 
-    - name: Create Credentials & Config Files
-      env:
-        VYPR_USER: ${{ secrets.VYPR_USERNAME }}
-        VYPR_PASS: ${{ secrets.VYPR_PASSWORD }}
-        VYPR_SERVER: ${{ secrets.VYPR_SERVER }}
-      run: |
-        # ইউজারনেম ও পাসওয়ার্ড ফাইল তৈরি
-        @"
-        $env:VYPR_USER
-        $env:VYPR_PASS
-        "@ | Out-File -FilePath "C:\Program Files\OpenVPN\config\vypr_creds.txt" -Encoding ascii
+      - name: Start VPN
+        run: |
+          # The --auth-user-pass flag points to the credentials file
+          # We use --daemon to run it in the background
+          sudo openvpn --config vypr.ovpn --auth-user-pass vpn_auth.txt --daemon
+          
+          # Wait for the tunnel to establish (crucial step)
+          # We monitor for the initialization sequence completion
+          timeout 30 sh -c 'until ip addr show tun0 | grep -q "inet"; do sleep 2; done'
+          
+          echo "VPN is connected."
 
-        # ওভিপিএন কনফিগারেশন ফাইল তৈরি
-        @"
-        client
-        dev tun
-        proto udp
-        remote $env:VYPR_SERVER 443
-        resolv-retry infinite
-        nobind
-        persist-key
-        persist-tun
-        ca "C:\\Program Files\\OpenVPN\\config\\://vyprvpn.com.crt"
-        auth-user-pass "C:\\Program Files\\OpenVPN\\config\\vypr_creds.txt"
-        cipher AES-256-CBC
-        auth SHA256
-        comp-lzo
-        verb 3
-        "@ | Out-File -FilePath "C:\Program Files\OpenVPN\config\vypr.ovpn" -Encoding ascii
-      shell: powershell
-
-    - name: Connect to VyprVPN (Background)
-      run: |
-        # ব্যাকগ্রাউন্ড প্রসেস হিসেবে ওপেনভিপিএন চালু করা
-        Start-Process "C:\Program Files\OpenVPN\bin\openvpn.exe" -ArgumentList "--config `",C:\Program Files\OpenVPN\config\vypr.ovpn`"" -WindowStyle Hidden
-        Start-Sleep -Seconds 10
-      shell: powershell
-
-    - name: Auto-Detect IP Info & Sync Windows Timezone
-      run: |
-        Write-Host "=================================================="
-        Write-Host "🌐 FETCHING CURRENT IP INFO & GEOLOCATION"
-        Write-Host "=================================================="
-        
-        # IPInfo থেকে ডেটা নেওয়া
-        $ipInfo = Invoke-RestMethod -Uri "https://ipinfo.io"
-        
-        Write-Host "🎯 Assigned IP: $($ipInfo.ip)"
-        Write-Host "📍 Location: $($ipInfo.city), $($ipInfo.region), $($ipInfo.country)"
-        Write-Host "⏰ Detected Timezone: $($ipInfo.timezone)"
-        
-        Write-Host "=================================================="
-        Write-Host "⚙️ AUTO-FITTING WINDOWS TIMEZONE WITH IP LOCATION"
-        Write-Host "=================================================="
-        
-        # উইন্ডোজের সিস্টেম টাইমজোন পরিবর্তন
-        Set-TimeZone -Name $ipInfo.timezone
-        
-        Write-Host "✅ Current Windows System Time:"
-        Get-Date
-        Write-Host "=================================================="
-      shell: powershell
+      - name: Verify IP Location
+        run: |
+          curl -s https://ifconfig.me
+          echo ""
+          # Add your actual automation script here
