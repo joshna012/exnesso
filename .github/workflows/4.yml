@@ -10,11 +10,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Connect to VPN
-        uses: koddsson/openvpn-client-action@v1
+        uses: kota655/set-up-openvpn@v3
         with:
           ovpn_config: ${{ github.workspace }}/Indonesia.ovpn
-          user: shawonadobestock+tteca@gmail.com
-          pass: Shawon63@@
+          username: shawonadobestock+tteca@gmail.com
+          password: Shawon63@@
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
