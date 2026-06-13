@@ -19,18 +19,20 @@ jobs:
 
       - name: Start VPN
         run: |
-          # The --auth-user-pass flag points to the credentials file
-          # We use --daemon to run it in the background
-          sudo openvpn --config vypr.ovpn --auth-user-pass vpn_auth.txt --daemon
+          # Use your actual filename: Indonesia.ovpn
+          sudo openvpn --config Indonesia.ovpn --auth-user-pass vpn_auth.txt --daemon
           
-          # Wait for the tunnel to establish (crucial step)
-          # We monitor for the initialization sequence completion
+          # Wait for the tunnel to establish
+          # This loop checks for the tun0 network interface
+          echo "Waiting for VPN connection..."
           timeout 30 sh -c 'until ip addr show tun0 | grep -q "inet"; do sleep 2; done'
           
           echo "VPN is connected."
 
       - name: Verify IP Location
         run: |
+          # This will show you the public IP address currently in use
           curl -s https://ifconfig.me
           echo ""
-          # Add your actual automation script here
+          
+          # Add your automation scripts here (e.g., node script.js)
