@@ -9,12 +9,30 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Connect to VPN
-        uses: kota655/set-up-openvpn@v3
-        with:
-          ovpn_config: ${{ github.workspace }}/Indonesia.ovpn
-          username: shawonadobestock+tteca@gmail.com
-          password: Shawon63@@
+      - name: Install OpenVPN
+        run: sudo apt-get update && sudo apt-get install -y openvpn
+
+      - name: Create Auth file
+        run: |
+          echo "shawonadobestock+tteca@gmail.com" > vpn_auth.txt
+          echo "Shawon63@@" >> vpn_auth.txt
+
+      - name: Start VPN
+        run: |
+          # Start OpenVPN in the background
+          sudo openvpn --config Indonesia.ovpn --auth-user-pass vpn_auth.txt --daemon --dev tun0
+          
+          # Wait for the tun0 interface to get an IP (up to 30 seconds)
+          echo "Waiting for VPN tunnel..."
+          for i in {1..15}; do
+            if ip addr show tun0 | grep -q "inet"; then
+              echo "VPN Connected."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "VPN failed to connect."
+          exit 1
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
