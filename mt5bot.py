@@ -694,12 +694,15 @@ def update_indicators():
 import json
 last_news_fetch = 0.0
 news_events = []
+NEWS_CACHE_FILE = "news_cache.json"
 
 def update_news():
     global last_news_fetch, news_events
     now = time.time()
     if now - last_news_fetch < 3600:  # check once per hour
         return
+    
+    success = False
     try:
         req = urllib.request.Request(NEWS_URL, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=10) as response:
@@ -708,21 +711,57 @@ def update_news():
             for item in data:
                 if item.get('impact') == 'High':
                     try:
-                        dt = datetime.fromisoformat(item['date'])
+                        date_str = item.get('date')
+                        # Handle potential 'Z' suffix in older Python versions
+                        if date_str.endswith('Z'):
+                            date_str = date_str[:-1] + '+00:00'
+                        dt = datetime.fromisoformat(date_str)
                         dt_utc = dt.astimezone(timezone.utc)
                         events.append({
                             'title': item.get('title'),
                             'country': item.get('country'),
                             'time': dt_utc
                         })
-                    except Exception as e:
+                    except Exception:
                         continue
             news_events = events
+            
+            # Save a JSON-serializable copy of news to the cache file
+            serializable_events = []
+            for ev in events:
+                serializable_events.append({
+                    'title': ev['title'],
+                    'country': ev['country'],
+                    'time': ev['time'].isoformat()
+                })
+            with open(NEWS_CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(serializable_events, f, ensure_ascii=False, indent=4)
+                
             last_news_fetch = now
+            success = True
             log.info("নিউজ ক্যালেন্ডার আপডেট করা হয়েছে। %dটি হাই-ইম্প্যাক্ট নিউজ লোড হয়েছে।", len(news_events))
     except Exception as e:
-        log.warning("নিউজ ক্যালেন্ডার আপডেট করতে ব্যর্থ হয়েছে: %s", e)
+        log.warning("নিউজ ক্যালেন্ডার আপডেট করতে ব্যর্থ হয়েছে: %s. লোকাল ক্যাশ ফাইল ব্যবহার করার চেষ্টা করা হচ্ছে...", e)
         last_news_fetch = now - 3300  # retry in 5 minutes
+
+    # Fallback to local cache if request failed and cache exists
+    if not success:
+        if os.path.exists(NEWS_CACHE_FILE):
+            try:
+                with open(NEWS_CACHE_FILE, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                parsed_events = []
+                for ev in cached_data:
+                    parsed_events.append({
+                        'title': ev['title'],
+                        'country': ev['country'],
+                        'time': datetime.fromisoformat(ev['time'])
+                    })
+                news_events = parsed_events
+                log.info("লোকাল ক্যাশ ফাইল থেকে %dটি হাই-ইম্প্যাক্ট নিউজ সফলভাবে লোড করা হয়েছে।", len(news_events))
+                success = True
+            except Exception as cache_ex:
+                log.warning("নিউজ ক্যাশ ফাইল পড়তে ব্যর্থ হয়েছে: %s", cache_ex)
 
 def is_news_paused(symbol):
     """Check if there is a high-impact news event within NEWS_PAUSE_MINUTES of current time."""
@@ -1882,10 +1921,90 @@ def manage_open():
         
     return count
 
+def test_algorithmic_trading():
+    """Temporary test to confirm AutoTrading is fully functional.
+    Places a mini trade (0.01 lots) and immediately closes it.
+    Logs success or prints error code."""
+    if not SYMBOLS:
+        return
+    symbol = SYMBOLS[0]
+    
+    # Check if there is already an active trade open to avoid interference
+    existing = [p for p in (mt5.positions_get(symbol=symbol) or []) if p.magic == MAGIC]
+    if existing:
+        log.info("ℹ️ [ট্রেড টেস্ট স্কিপ] এই পেয়ারে অলরেডি রানিং ট্রেড আছে, তাই টেস্ট ট্রেড স্কিপ করা হলো।")
+        return
+        
+    log.info("🧪 [ট্রেড টেস্ট] অটো-ট্রেডিং অপশনটি কাজ করছে কিনা তা পরীক্ষা করার জন্য ০.০১ লটের টেস্ট এন্ট্রি নেওয়া হচ্ছে...")
+    tick = mt5.symbol_info_tick(symbol)
+    sym_info = mt5.symbol_info(symbol)
+    if tick is None or sym_info is None:
+        log.warning("⚠️ [ট্রেড টেস্ট] সিম্বল ডাটা পাওয়া যায়নি, টেস্ট করা যাচ্ছে না।")
+        return
+
+    # Use min volume for safety (usually 0.01)
+    volume = sym_info.volume_min
+    price = tick.ask
+    
+    # Place test order
+    res = mt5.order_send({
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol,
+        "volume": volume,
+        "type": mt5.ORDER_TYPE_BUY,
+        "price": price,
+        "deviation": DEVIATION,
+        "magic": MAGIC,
+        "comment": "test_trade",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_IOC
+    })
+    
+    if res is None:
+        log.error("❌ [ট্রেড টেস্ট ব্যর্থ] order_send None রিটার্ন করেছে।")
+        return
+        
+    if res.retcode == mt5.TRADE_RETCODE_DONE:
+        log.info("✅ [ট্রেড টেস্ট সফল] অর্ডার সফলভাবে প্লে করা হয়েছে! এবার এটি ক্লোজ করা হচ্ছে...")
+        # Immediately close the test order
+        ticket = res.order
+        # Wait a brief moment to ensure terminal registers the position
+        time.sleep(0.5)
+        pos = mt5.positions_get(ticket=ticket)
+        if pos:
+            pos_info = pos[0]
+            tick_close = mt5.symbol_info_tick(symbol)
+            close_price = tick_close.bid if tick_close else tick.bid
+            res_close = mt5.order_send({
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": symbol,
+                "position": pos_info.ticket,
+                "volume": pos_info.volume,
+                "type": mt5.ORDER_TYPE_SELL,
+                "price": close_price,
+                "deviation": DEVIATION,
+                "magic": MAGIC,
+                "comment": "test_close",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC
+            })
+            if res_close is not None and res_close.retcode == mt5.TRADE_RETCODE_DONE:
+                log.info("✅ [ট্রেড টেস্ট সম্পন্ন] টেস্ট ট্রেডটি সফলভাবে ক্লোজ করা হয়েছে।")
+            else:
+                log.warning("⚠️ [ট্রেড টেস্ট] টেস্ট ট্রেডটি ক্লোজ করা যায়নি: %s", getattr(res_close, 'comment', 'Unknown'))
+        else:
+            log.warning("⚠️ [ট্রেড টেস্ট] ওপেন করা টেস্ট পজিশনটি খুঁজে পাওয়া যায়নি (হয়তো অন্য কোনো কারণে ক্লোজ হয়ে গেছে)।")
+    else:
+        log.error("❌ [ট্রেড টেস্ট ব্যর্থ] অর্ডার রিজেক্ট হয়েছে! এরর কোড: %s (%s). "
+                  "আপনার MT5 এর Algo Trading বাটনটি অন আছে কিনা এবং 'Allow Algorithmic Trading' অপশনটি চালু আছে কিনা নিশ্চিত করুন।",
+                  res.retcode, getattr(res, 'comment', 'Unknown'))
+
+
 # ---------------- MAIN LOOP ----------------
 def run():
     connect()
     init_journal()
+    test_algorithmic_trading()
     
     # Pre-populate technical indicators cache before starting
     update_news()
