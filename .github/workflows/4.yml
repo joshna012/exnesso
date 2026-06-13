@@ -1,4 +1,4 @@
-name: VPN Task Workflow
+name: VPN and Screenshot Workflow
 
 on: [workflow_dispatch]
 
@@ -9,30 +9,36 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install OpenVPN
-        run: sudo apt-get update && sudo apt-get install -y openvpn
+      - name: Connect to VPN
+        uses: koddsson/openvpn-client-action@v1
+        with:
+          ovpn_config: ${{ github.workspace }}/Indonesia.ovpn
+          user: shawonadobestock+tteca@gmail.com
+          pass: Shawon63@@
 
-      - name: Create Auth file
-        run: |
-          echo "shawonadobestock+tteca@gmail.com" > vpn_auth.txt
-          echo "Shawon63@@" >> vpn_auth.txt
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Start VPN
-        run: |
-          # Use your actual filename: Indonesia.ovpn
-          sudo openvpn --config Indonesia.ovpn --auth-user-pass vpn_auth.txt --daemon
-          
-          # Wait for the tunnel to establish
-          # This loop checks for the tun0 network interface
-          echo "Waiting for VPN connection..."
-          timeout 30 sh -c 'until ip addr show tun0 | grep -q "inet"; do sleep 2; done'
-          
-          echo "VPN is connected."
+      - name: Install Puppeteer
+        run: npm install puppeteer
 
-      - name: Verify IP Location
+      - name: Capture Screenshot
         run: |
-          # This will show you the public IP address currently in use
-          curl -s https://ifconfig.me
-          echo ""
-          
-          # Add your automation scripts here (e.g., node script.js)
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+            const page = await browser.newPage();
+            await page.goto('https://browserleaks.com/ip', { waitUntil: 'networkidle2' });
+            await page.screenshot({ path: 'ip_check.png', fullPage: true });
+            await browser.close();
+          })();
+          "
+
+      - name: Upload Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ip-check-screenshot
+          path: ip_check.png
