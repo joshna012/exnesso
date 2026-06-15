@@ -1,4 +1,4 @@
-name: Squid Proxy with Hardcoded ngrok
+name: Squid Proxy with ngrok
 
 on:
   workflow_dispatch:
@@ -11,50 +11,44 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install Squid
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y squid
-        # সব ট্রাফিক অ্যালাউ করার জন্য কনফিগারেশন পরিবর্তন
+        sudo apt-get install -y squid curl jq unzip
+
+    - name: Configure Squid
+      run: |
         sudo sed -i 's/http_access deny all/http_access allow all/' /etc/squid/squid.conf
-        sudo systemctl restart squid
+        sudo service squid restart || sudo service squid start
 
     - name: Install ngrok
       run: |
-        curl -s https://amazonaws.com | sudo tee /etc/apt/trusted.gpg.md5 > /dev/null
-        echo "deb https://amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-        sudo apt-get update && sudo apt-get install ngrok
+        curl -sSL https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip -o ngrok.zip
+        unzip ngrok.zip
+        sudo mv ngrok /usr/local/bin/ngrok
+        ngrok version
 
     - name: Start ngrok Tunnel
       run: |
-        # আপনার দেওয়া টোকেনটি এখানে হার্ডকোড করা হয়েছে
         ngrok config add-authtoken "3DXAj4kKNn5FF5vZy2IE1yfz4D6_3d7iVh8d69V52uFmHJCm6"
-        
-        # Squid-এর ডিফল্ট পোর্ট 3128 কে TCP টানেলের মাধ্যমে এক্সপোজ করা হচ্ছে
-        ngrok tcp 3128 --log=stdout > ngrok.log &
-        
-        # টানেলটি চালু হওয়ার জন্য ৫ সেকেন্ড অপেক্ষা করুন
-        sleep 5
+        nohup ngrok tcp 3128 --log=stdout > ngrok.log 2>&1 &
 
-    - name: Get External Host and Port
+        sleep 8
+
+    - name: Get Tunnel Info
       run: |
-        # ngrok API থেকে পাবলিক অ্যাড্রেস এবং পোর্ট বের করা হচ্ছে
-        PUBLIC_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels.public_url')
-        
-        # 'tcp://' অংশটি বাদ দিয়ে হোস্ট এবং পোর্ট আলাদা করা হচ্ছে
+        PUBLIC_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+
         CLEAN_URL=$(echo $PUBLIC_URL | sed 's/tcp:\/\///')
         EXT_HOST=$(echo $CLEAN_URL | cut -d':' -f1)
         EXT_PORT=$(echo $CLEAN_URL | cut -d':' -f2)
-        
+
         echo "=========================================="
-        echo "Squid Proxy Setup Complete!"
-        echo "Host (IP/Domain): $EXT_HOST"
+        echo "Squid Proxy Ready"
+        echo "Host: $EXT_HOST"
         echo "Port: $EXT_PORT"
-        echo "Your Proxy URL: http://$EXT_HOST:$EXT_PORT"
+        echo "Proxy: $EXT_HOST:$EXT_PORT"
         echo "=========================================="
 
-    - name: Keep Tunnel Alive
-      run: |
-        # টানেলটি সচল রাখতে এবং কানেক্ট করার সময় দিতে ওয়ার্কফ্লোটিকে ৩০ মিনিট চালু রাখবে
-        echo "Waiting for external connections..."
-        sleep 30m
+    - name: Keep Alive
+      run: sleep 30m
